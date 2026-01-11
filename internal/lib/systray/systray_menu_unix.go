@@ -17,7 +17,7 @@ import (
 func (item *MenuItem) SetIcon(iconBytes []byte) {
 	instance.menuLock.Lock()
 	defer instance.menuLock.Unlock()
-	m, exists := findLayout(int32(item.id))
+	m, exists := findLayout(int32(item.id)) //nolint:gosec
 	if exists {
 		m.V1["icon-data"] = dbus.MakeVariant(iconBytes)
 		refresh()
@@ -96,7 +96,7 @@ func (t *tray) GetProperty(id int32, name string) (value dbus.Variant, err *dbus
 // Event is com.canonical.dbusmenu.Event method.
 func (t *tray) Event(id int32, eventID string, data dbus.Variant, timestamp uint32) (err *dbus.Error) {
 	if eventID == "clicked" {
-		systrayMenuItemSelected(uint32(id))
+		systrayMenuItemSelected(id)
 	}
 	return
 }
@@ -110,7 +110,7 @@ func (t *tray) EventGroup(events []struct {
 }) (idErrors []int32, err *dbus.Error) {
 	for _, event := range events {
 		if event.V1 == "clicked" {
-			systrayMenuItemSelected(uint32(event.V0))
+			systrayMenuItemSelected(event.V0)
 		}
 	}
 	return
@@ -170,19 +170,19 @@ func addOrUpdateMenuItem(item *MenuItem) {
 	var layout *menuLayout
 	instance.menuLock.Lock()
 	defer instance.menuLock.Unlock()
-	m, exists := findLayout(int32(item.id))
+	m, exists := findLayout(int32(item.id)) //nolint:gosec
 	if exists {
 		layout = m
 	} else {
 		layout = &menuLayout{
-			V0: int32(item.id),
+			V0: int32(item.id), //nolint:gosec
 			V1: map[string]dbus.Variant{},
 			V2: []dbus.Variant{},
 		}
 
 		parent := instance.menu
 		if item.parent != nil {
-			m, ok := findLayout(int32(item.parent.id))
+			m, ok := findLayout(int32(item.parent.id)) //nolint:gosec
 			if ok {
 				parent = m
 				parent.V1["children-display"] = dbus.MakeVariant("submenu")
@@ -201,7 +201,7 @@ func addSeparator(id uint32) {
 	instance.menuLock.Lock()
 	defer instance.menuLock.Unlock()
 	layout := &menuLayout{
-		V0: int32(id),
+		V0: int32(id), //nolint:gosec
 		V1: map[string]dbus.Variant{
 			"type": dbus.MakeVariant("separator"),
 		},
@@ -256,7 +256,7 @@ func findSubLayout(id int32, vals []dbus.Variant) (*menuLayout, bool) {
 func hideMenuItem(item *MenuItem) {
 	instance.menuLock.Lock()
 	defer instance.menuLock.Unlock()
-	m, exists := findLayout(int32(item.id))
+	m, exists := findLayout(int32(item.id)) //nolint:gosec
 	if exists {
 		m.V1["visible"] = dbus.MakeVariant(false)
 		refresh()
@@ -266,7 +266,7 @@ func hideMenuItem(item *MenuItem) {
 func showMenuItem(item *MenuItem) {
 	instance.menuLock.Lock()
 	defer instance.menuLock.Unlock()
-	m, exists := findLayout(int32(item.id))
+	m, exists := findLayout(int32(item.id)) //nolint:gosec
 	if exists {
 		m.V1["visible"] = dbus.MakeVariant(true)
 		refresh()

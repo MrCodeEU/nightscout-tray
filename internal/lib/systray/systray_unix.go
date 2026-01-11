@@ -20,9 +20,9 @@ import (
 	"github.com/godbus/dbus/v5/introspect"
 	"github.com/godbus/dbus/v5/prop"
 
+	dbus "github.com/godbus/dbus/v5"
 	"github.com/mrcode/nightscout-tray/internal/lib/systray/internal/generated/menu"
 	"github.com/mrcode/nightscout-tray/internal/lib/systray/internal/generated/notifier"
-	dbus "github.com/godbus/dbus/v5"
 )
 
 const (
@@ -170,9 +170,9 @@ type UnimplementedStatusNotifierItem struct {
 	dActivateTime     int64
 }
 
-func (*UnimplementedStatusNotifierItem) iface() string {
-	return notifier.InterfaceStatusNotifierItem
-}
+// func (*UnimplementedStatusNotifierItem) iface() string {
+// 	return notifier.InterfaceStatusNotifierItem
+// }
 
 func (m *UnimplementedStatusNotifierItem) ContextMenu(x int32, y int32) (err *dbus.Error) {
 	if m.contextMenu != nil {
@@ -335,13 +335,13 @@ type tray struct {
 	menuVersion      uint32
 }
 
-func (*tray) iface() string {
-	return notifier.InterfaceStatusNotifierItem
-}
+// func (*tray) iface() string {
+// 	return notifier.InterfaceStatusNotifierItem
+// }
 
 func (t *tray) createPropSpec() map[string]map[string]*prop.Prop {
-	t.lock.Lock()
-	t.lock.Unlock()
+	// t.lock.Lock()
+	// t.lock.Unlock()
 	return map[string]map[string]*prop.Prop{
 		"org.kde.StatusNotifierItem": {
 			"Status": {
