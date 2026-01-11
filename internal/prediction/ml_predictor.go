@@ -2,15 +2,17 @@
 package prediction
 
 import (
+	"fmt"
 	"math"
+	"math/rand"
 	"sort"
 	"time"
 
 	"github.com/mrcode/nightscout-tray/internal/models"
 )
 
-// MLPredictor implements sequence-based glucose prediction inspired by research
-// on LSTM/GRU neural networks for blood glucose forecasting.
+// MLPredictor implements sequence-based glucose prediction using both
+// pattern matching (k-NN style) and LSTM neural networks.
 //
 // Based on research: "Blood Glucose Prediction Using Deep Learning and Reinforcement Learning"
 // Key insights:
@@ -19,9 +21,13 @@ import (
 // - Normalize values between -1 and 1
 // - Ensemble multiple prediction methods (voting)
 type MLPredictor struct {
-	params     *models.DiabetesParameters
-	history    *SequenceHistory
-	patterns   *PatternLibrary
+	params   *models.DiabetesParameters
+	history  *SequenceHistory
+	patterns *PatternLibrary
+
+	// LSTM model for neural network predictions
+	lstm      *LSTM
+	isTrained bool
 }
 
 // SequenceHistory stores recent glucose sequences for pattern matching
@@ -32,16 +38,16 @@ type SequenceHistory struct {
 
 // GlucoseSequence represents a sequence of glucose readings with context
 type GlucoseSequence struct {
-	InputValues    [6]float64    // 6 readings at 5-min intervals (30 min of history)
-	OutputValues   [6]float64    // Next 6 readings (30 min ahead) - for training
-	Timestamp      time.Time     // When this sequence was recorded
-	IOBAtTime      float64       // Insulin on board at sequence start
-	COBAtTime      float64       // Carbs on board at sequence start
-	TimeOfDay      float64       // Normalized time of day (0-1)
-	RecentInsulin  float64       // Insulin given in last 2 hours
-	RecentCarbs    float64       // Carbs eaten in last 2 hours
-	TrendVelocity  float64       // Rate of change (mg/dL per 5 min)
-	TrendAccel     float64       // Acceleration of change
+	InputValues   [6]float64 // 6 readings at 5-min intervals (30 min of history)
+	OutputValues  [6]float64 // Next 6 readings (30 min ahead) - for training
+	Timestamp     time.Time  // When this sequence was recorded
+	IOBAtTime     float64    // Insulin on board at sequence start
+	COBAtTime     float64    // Carbs on board at sequence start
+	TimeOfDay     float64    // Normalized time of day (0-1)
+	RecentInsulin float64    // Insulin given in last 2 hours
+	RecentCarbs   float64    // Carbs eaten in last 2 hours
+	TrendVelocity float64    // Rate of change (mg/dL per 5 min)
+	TrendAccel    float64    // Acceleration of change
 }
 
 // PatternLibrary stores learned patterns from historical data
@@ -52,23 +58,27 @@ type PatternLibrary struct {
 
 // LearnedPattern represents a learned glucose response pattern
 type LearnedPattern struct {
-	InputPattern    [6]float64 // Normalized input sequence
-	OutputPattern   [6]float64 // Resulting output sequence
-	ContextIOB      float64    // Typical IOB for this pattern
-	ContextCOB      float64    // Typical COB for this pattern
-	Count           int        // How many times this pattern was seen
-	MeanError       float64    // Average prediction error for this pattern
-	Weight          float64    // Pattern weight based on recency and accuracy
+	InputPattern  [6]float64 // Normalized input sequence
+	OutputPattern [6]float64 // Resulting output sequence
+	ContextIOB    float64    // Typical IOB for this pattern
+	ContextCOB    float64    // Typical COB for this pattern
+	Count         int        // How many times this pattern was seen
+	MeanError     float64    // Average prediction error for this pattern
+	Weight        float64    // Pattern weight based on recency and accuracy
 }
 
 // Constants for normalization (from research paper)
 const (
 	glucoseMin = 20.0  // Minimum glucose for normalization
 	glucoseMax = 420.0 // Maximum glucose for normalization
-	
+
 	// Pattern matching parameters
-	maxPatterns       = 1000 // Maximum patterns to store
+	maxPatterns         = 1000 // Maximum patterns to store
 	similarityThreshold = 0.85 // Minimum similarity for pattern match
+
+	// LSTM parameters
+	InputSeqLen = 12 // 1 hour of history (5 min intervals)
+	PredHorizon = 6  // 30 mins ahead
 )
 
 // NewMLPredictor creates a new ML-based predictor
@@ -86,12 +96,168 @@ func NewMLPredictor(params *models.DiabetesParameters) *MLPredictor {
 			patterns:     make([]LearnedPattern, 0, maxPatterns),
 			clusterCount: 50, // Number of pattern clusters
 		},
+		lstm: NewLSTM(1, 20, 1), // Input: 1 (glucose). Hidden: 20. Output: 1.
 	}
 }
 
 // SetParameters updates the prediction parameters
 func (m *MLPredictor) SetParameters(params *models.DiabetesParameters) {
 	m.params = params
+}
+
+// Train trains the LSTM model on the provided history (simple interface for app.go)
+func (m *MLPredictor) Train(history []models.GlucoseEntry) error {
+	if len(history) < InputSeqLen+1 {
+		return fmt.Errorf("insufficient history for training")
+	}
+
+	// Prepare dataset
+	type trainSample struct {
+		inputs  [][]float64
+		targets [][]float64
+	}
+	var dataset []trainSample
+
+	// History should be sorted old -> new
+	sorted := make([]models.GlucoseEntry, len(history))
+	copy(sorted, history)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Date < sorted[j].Date
+	})
+
+	// Input: [t0, t1, ..., t11]
+	// Target: [t1, t2, ..., t12]
+	for i := 0; i < len(sorted)-InputSeqLen-1; i++ {
+		inSeq := make([]float64, InputSeqLen)
+		tarSeq := make([]float64, InputSeqLen)
+
+		for j := 0; j < InputSeqLen; j++ {
+			inSeq[j] = normalize(float64(sorted[i+j].SGV))
+			tarSeq[j] = normalize(float64(sorted[i+j+1].SGV))
+		}
+
+		dataset = append(dataset, trainSample{
+			inputs:  seqAsInput(inSeq),
+			targets: seqAsInput(tarSeq),
+		})
+	}
+
+	if len(dataset) == 0 {
+		return fmt.Errorf("no valid training sequences")
+	}
+
+	// Train loop
+	epochs := 20 // Reduce epochs for speed
+	m.lstm.LearningRate = 0.05
+
+	// Shuffle index
+	indices := rand.Perm(len(dataset))
+
+	for i := 0; i < epochs; i++ {
+		for _, idx := range indices {
+			sample := dataset[idx]
+			m.lstm.Train(sample.inputs, sample.targets)
+		}
+	}
+
+	m.isTrained = true
+	return nil
+}
+
+// Predict generates predictions using the LSTM model (simple interface for app.go)
+func (m *MLPredictor) Predict(recent []models.GlucoseEntry) (*models.PredictionResult, error) {
+	if !m.isTrained {
+		// Attempt to train on recent data if not trained
+		if len(recent) > InputSeqLen*2 {
+			if err := m.Train(recent); err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, fmt.Errorf("model not trained")
+		}
+	}
+
+	if len(recent) < InputSeqLen {
+		return nil, fmt.Errorf("not enough recent data")
+	}
+
+	// Sort entries
+	sorted := make([]models.GlucoseEntry, len(recent))
+	copy(sorted, recent)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Date < sorted[j].Date
+	})
+
+	// Use the last InputSeqLen entries
+	startIdx := len(sorted) - InputSeqLen
+	seq := sorted[startIdx:]
+
+	inputVal := make([]float64, InputSeqLen)
+	for i, e := range seq {
+		inputVal[i] = normalize(float64(e.SGV))
+	}
+
+	// Make predictions for horizon
+	predictions := []models.PredictedPoint{}
+	lastTime := seq[len(seq)-1].Time()
+
+	// Autoregressive prediction
+	rollingInput := make([]float64, InputSeqLen)
+	copy(rollingInput, inputVal)
+
+	for i := 1; i <= PredHorizon; i++ {
+		outs, _, _, _ := m.lstm.Forward(seqAsInput(rollingInput))
+		lastOut := outs[len(outs)-1][0]
+
+		predVal := denormalize(lastOut)
+		predTime := lastTime.Add(time.Duration(i*5) * time.Minute)
+
+		predictions = append(predictions, models.PredictedPoint{
+			Time:      predTime.UnixMilli(),
+			Value:     predVal,
+			ValueMgDL: int(predVal),
+			ValueMmol: predVal / 18.0182,
+		})
+
+		// Shift
+		rollingInput = append(rollingInput[1:], lastOut)
+	}
+
+	return &models.PredictionResult{
+		PredictedAt:    time.Now(),
+		BasedOnGlucose: float64(seq[len(seq)-1].SGV),
+		Unit:           "mg/dL",
+		Points:         predictions,
+		ShortTerm:      predictions,
+	}, nil
+}
+
+// Helper functions for LSTM
+
+// normalize glucose to 0-1 range
+func normalize(bg float64) float64 {
+	val := (bg - glucoseMin) / (glucoseMax - glucoseMin)
+	if val < 0 {
+		return 0
+	}
+	if val > 1 {
+		return 1
+	}
+	return val
+}
+
+// denormalize converts normalized value back to mg/dL
+func denormalize(val float64) float64 {
+	return val*(glucoseMax-glucoseMin) + glucoseMin
+}
+
+// seqAsInput converts simple float slice to [][]float64 for LSTM Input format (T x InputSize)
+func seqAsInput(seq []float64) [][]float64 {
+	out := make([][]float64, len(seq))
+	for i, v := range seq {
+		out[i] = []float64{v}
+	}
+	return out
 }
 
 // LearnFromHistory builds the pattern library from historical data
@@ -109,15 +275,20 @@ func (m *MLPredictor) LearnFromHistory(entries []models.GlucoseEntry, treatments
 
 	// Build sequences from historical data
 	m.history.sequences = m.buildSequences(sorted, treatments)
-	
+
 	// Cluster sequences into patterns
 	m.clusterPatterns()
+
+	// Also train LSTM if we have enough data
+	if len(entries) > InputSeqLen*2 {
+		_ = m.Train(entries) // Ignore error, pattern matching will still work
+	}
 }
 
 // buildSequences creates training sequences from historical data
 func (m *MLPredictor) buildSequences(entries []models.GlucoseEntry, treatments []models.Treatment) []GlucoseSequence {
 	var sequences []GlucoseSequence
-	
+
 	// Need at least 12 entries for input + output (30 min history + 30 min outcome)
 	if len(entries) < 12 {
 		return sequences
@@ -129,7 +300,7 @@ func (m *MLPredictor) buildSequences(entries []models.GlucoseEntry, treatments [
 	// Slide through entries creating sequences
 	for i := 0; i <= len(entries)-12; i++ {
 		// Check if readings are roughly 5 minutes apart
-		if !m.isValidSequence(entries[i:i+12]) {
+		if !m.isValidSequence(entries[i : i+12]) {
 			continue
 		}
 
@@ -150,11 +321,11 @@ func (m *MLPredictor) buildSequences(entries []models.GlucoseEntry, treatments [
 		// Calculate context at sequence start
 		seqTime := entries[i].Time()
 		seq.TimeOfDay = float64(seqTime.Hour()*60+seqTime.Minute()) / 1440.0
-		
+
 		// Calculate IOB and COB at this time
 		seq.IOBAtTime = m.calculateIOBAt(treatmentsByTime, seqTime)
 		seq.COBAtTime = m.calculateCOBAt(treatmentsByTime, seqTime)
-		
+
 		// Recent insulin and carbs (last 2 hours)
 		seq.RecentInsulin = m.sumRecentInsulin(treatmentsByTime, seqTime, 2*time.Hour)
 		seq.RecentCarbs = m.sumRecentCarbs(treatmentsByTime, seqTime, 2*time.Hour)
@@ -189,7 +360,7 @@ func (m *MLPredictor) clusterPatterns() {
 
 	// Use k-means-like clustering to find representative patterns
 	// For simplicity, we'll use a greedy approach: add patterns that are distinct
-	
+
 	m.patterns.patterns = make([]LearnedPattern, 0, maxPatterns)
 
 	for _, seq := range m.history.sequences {
@@ -251,7 +422,7 @@ func (m *MLPredictor) sequenceSimilarity(a, b [6]float64, iobA, iobB float64) fl
 	}
 
 	shapeSim := dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
-	
+
 	// IOB similarity (important context)
 	iobDiff := math.Abs(iobA - iobB)
 	iobSim := math.Exp(-iobDiff / 2.0) // Exponential decay for IOB difference
@@ -260,7 +431,7 @@ func (m *MLPredictor) sequenceSimilarity(a, b [6]float64, iobA, iobB float64) fl
 	return 0.8*shapeSim + 0.2*iobSim
 }
 
-// PredictML generates predictions using the ML approach
+// PredictML generates predictions using the ML approach (comprehensive interface)
 func (m *MLPredictor) PredictML(
 	currentGlucose float64,
 	recentEntries []models.GlucoseEntry,
@@ -272,7 +443,7 @@ func (m *MLPredictor) PredictML(
 
 	// Build current input sequence
 	inputSeq := m.buildCurrentSequence(recentEntries)
-	
+
 	// Calculate current context
 	iob := m.calculateIOB(recentTreatments, now)
 	cob := m.calculateCOB(recentTreatments, now)
@@ -292,7 +463,7 @@ func (m *MLPredictor) PredictML(
 
 	// Convert predictions to PredictedPoints
 	result.ShortTerm = m.predictionsToPoints(predictions[:6], now, true)
-	
+
 	// For long-term, extrapolate with decay
 	result.LongTerm = m.extendPredictions(predictions, now, recentTreatments)
 
@@ -307,7 +478,7 @@ func (m *MLPredictor) PredictML(
 // buildCurrentSequence creates an input sequence from recent entries
 func (m *MLPredictor) buildCurrentSequence(entries []models.GlucoseEntry) [6]float64 {
 	var seq [6]float64
-	
+
 	if len(entries) == 0 {
 		return seq
 	}
@@ -356,13 +527,13 @@ func (m *MLPredictor) ensemblePredict(
 	treatments []models.Treatment,
 ) [12]float64 {
 	var predictions [12]float64
-	
+
 	// Method 1: Pattern matching (like k-NN)
 	patternPred := m.patternMatchPredict(inputSeq, iob, cob)
-	
+
 	// Method 2: Trend extrapolation with physiological model
 	trendPred := m.trendModelPredict(inputSeq, iob, cob, treatments)
-	
+
 	// Method 3: Momentum-based prediction
 	momentumPred := m.momentumPredict(inputSeq)
 
@@ -384,7 +555,7 @@ func (m *MLPredictor) ensemblePredict(
 // patternMatchPredict finds similar historical patterns and uses their outcomes
 func (m *MLPredictor) patternMatchPredict(inputSeq [6]float64, iob, cob float64) [12]float64 {
 	var predictions [12]float64
-	
+
 	if len(m.patterns.patterns) == 0 {
 		// No patterns - just return linear extrapolation
 		return m.linearExtrapolate(inputSeq)
@@ -395,7 +566,7 @@ func (m *MLPredictor) patternMatchPredict(inputSeq [6]float64, iob, cob float64)
 		pattern    *LearnedPattern
 		similarity float64
 	}
-	
+
 	var matches []patternScore
 	for i := range m.patterns.patterns {
 		sim := m.sequenceSimilarity(inputSeq, m.patterns.patterns[i].InputPattern, iob, m.patterns.patterns[i].ContextIOB)
@@ -445,10 +616,10 @@ func (m *MLPredictor) patternMatchPredict(inputSeq [6]float64, iob, cob float64)
 // trendModelPredict uses current trend with insulin/carb effects
 func (m *MLPredictor) trendModelPredict(inputSeq [6]float64, iob, cob float64, treatments []models.Treatment) [12]float64 {
 	var predictions [12]float64
-	
+
 	// Calculate current trend (normalized)
 	trend := inputSeq[5] - inputSeq[4]
-	
+
 	// ISF and ICR effects
 	isf := m.params.ISF
 	icr := m.params.ICR
@@ -461,11 +632,11 @@ func (m *MLPredictor) trendModelPredict(inputSeq [6]float64, iob, cob float64, t
 	prev := inputSeq[5]
 	for i := 0; i < 12; i++ {
 		minutesAhead := float64((i + 1) * 5)
-		
+
 		// Trend effect with decay
 		trendDecay := math.Exp(-0.02 * minutesAhead)
 		trendEffect := (trend / (glucoseMax - glucoseMin) * 2) * trendDecay
-		
+
 		// Insulin effect (normalized)
 		insulinEffect := 0.0
 		if iob > 0 {
@@ -483,7 +654,7 @@ func (m *MLPredictor) trendModelPredict(inputSeq [6]float64, iob, cob float64, t
 		}
 
 		predictions[i] = prev + trendEffect + insulinEffect + carbEffect
-		
+
 		// Clamp to valid range
 		if predictions[i] < -1 {
 			predictions[i] = -1
@@ -501,7 +672,7 @@ func (m *MLPredictor) trendModelPredict(inputSeq [6]float64, iob, cob float64, t
 // momentumPredict uses momentum/acceleration for prediction
 func (m *MLPredictor) momentumPredict(inputSeq [6]float64) [12]float64 {
 	var predictions [12]float64
-	
+
 	// Calculate velocity and acceleration
 	v1 := inputSeq[5] - inputSeq[4]
 	v0 := inputSeq[4] - inputSeq[3]
@@ -515,7 +686,7 @@ func (m *MLPredictor) momentumPredict(inputSeq [6]float64) [12]float64 {
 	for i := 0; i < 12; i++ {
 		velocity = velocity*damping + accel*0.1
 		pos = pos + velocity
-		
+
 		// Apply constraints
 		if pos < -1 {
 			pos = -1
@@ -535,15 +706,10 @@ func (m *MLPredictor) momentumPredict(inputSeq [6]float64) [12]float64 {
 // linearExtrapolate does simple linear extrapolation
 func (m *MLPredictor) linearExtrapolate(inputSeq [6]float64) [12]float64 {
 	var predictions [12]float64
-	
-	if len(inputSeq) < 6 {
-		return predictions
-	}
-	
+
 	trend := inputSeq[5] - inputSeq[4]
-	
+
 	for i := 0; i < 12; i++ {
-		//nolint:gosec // inputSeq is always size 6, index is safe
 		predictions[i] = inputSeq[5] + trend*float64(i+1)*0.5 // Damped trend
 		if predictions[i] < -1 {
 			predictions[i] = -1
@@ -595,6 +761,7 @@ func (m *MLPredictor) predictionsToPoints(predictions []float64, startTime time.
 		points[i] = models.PredictedPoint{
 			Time:       predTime.UnixMilli(),
 			Value:      math.Round(glucose*10) / 10,
+			ValueMgDL:  int(glucose),
 			ValueMmol:  models.ToMmol(glucose),
 			Confidence: confidence,
 		}
@@ -635,6 +802,7 @@ func (m *MLPredictor) extendPredictions(predictions [12]float64, startTime time.
 		longTerm = append(longTerm, models.PredictedPoint{
 			Time:       predTime.UnixMilli(),
 			Value:      math.Round(glucose*10) / 10,
+			ValueMgDL:  int(glucose),
 			ValueMmol:  models.ToMmol(glucose),
 			Confidence: confidence,
 		})
@@ -715,14 +883,14 @@ func (m *MLPredictor) insulinActivityCurve(minutes float64) float64 {
 	if minutes >= diaMinutes {
 		return 0
 	}
-	
+
 	peakTime := 75.0
-	
+
 	// Biexponential model
 	if minutes < peakTime {
 		return (minutes / peakTime) * 0.3 // Rising phase
 	}
-	
+
 	// Decay phase
 	t := (minutes - peakTime) / (diaMinutes - peakTime)
 	return 0.3 + 0.7*(1-t) // Linear decay for simplicity
@@ -735,7 +903,7 @@ func (m *MLPredictor) carbActivityCurve(minutes float64) float64 {
 	if minutes >= absorptionTime {
 		return 0
 	}
-	
+
 	// Return rate of absorption at this time
 	t := minutes / absorptionTime
 	return (1 / (1 + math.Exp(-10*(t-0.3)))) * (1 - t)

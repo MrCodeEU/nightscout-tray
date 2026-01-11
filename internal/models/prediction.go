@@ -85,13 +85,19 @@ func GetTimeOfDayPeriod(t time.Time) TimeOfDayPeriod {
 type PredictionResult struct {
 	// Short-term predictions (more accurate, 1-2 hours)
 	ShortTerm []PredictedPoint `json:"shortTerm"`
-	
+
 	// Long-term predictions (less accurate, 3-6 hours)
 	LongTerm []PredictedPoint `json:"longTerm"`
 
+	// For LSTM model compatibility - flat list of predictions
+	Points []PredictedPoint `json:"points,omitempty"`
+
+	// Unit for display (mg/dL or mmol/L)
+	Unit string `json:"unit,omitempty"`
+
 	// Active insulin on board
 	IOB float64 `json:"iob"`
-	
+
 	// Active carbs on board
 	COB float64 `json:"cob"`
 
@@ -103,10 +109,10 @@ type PredictionResult struct {
 
 	// Time until predicted high threshold crossing (0 if not predicted or already high)
 	HighInMinutes float64 `json:"highInMinutes"`
-	
+
 	// Time until predicted low threshold crossing (0 if not predicted or already low)
 	LowInMinutes float64 `json:"lowInMinutes"`
-	
+
 	// Target thresholds used for high/low prediction
 	HighThreshold float64 `json:"highThreshold"` // mg/dL
 	LowThreshold  float64 `json:"lowThreshold"`  // mg/dL
@@ -121,9 +127,10 @@ type PredictionResult struct {
 type PredictedPoint struct {
 	Time       int64   `json:"time"`       // Unix timestamp in milliseconds
 	Value      float64 `json:"value"`      // Predicted glucose in mg/dL
+	ValueMgDL  int     `json:"valueMgDL"`  // Normalized integer for consistency
 	ValueMmol  float64 `json:"valueMmol"`  // Predicted glucose in mmol/L
 	Confidence float64 `json:"confidence"` // Confidence level (0-100)
-	
+
 	// Factors contributing to this prediction
 	InsulinEffect float64 `json:"insulinEffect"` // Expected glucose change from insulin
 	CarbEffect    float64 `json:"carbEffect"`    // Expected glucose change from carbs
