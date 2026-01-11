@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nightscout Tray</title>
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <h1 class="logo">
+                    <span class="logo-icon">💉</span>
+                    Nightscout Tray
+                </h1>
+            </div>
+            <nav class="nav">
+                <button class="nav-btn active" data-view="dashboard">
+                    <span class="nav-icon">📊</span>
+                    Dashboard
+                </button>
+                <button class="nav-btn" data-view="settings">
+                    <span class="nav-icon">⚙️</span>
+                    Settings
+                </button>
+            </nav>
+            <div class="header-right">
+                <button id="btn-refresh" class="icon-btn" title="Refresh">
+                    <span>🔄</span>
+                </button>
+                <button id="btn-minimize" class="icon-btn" title="Minimize to tray">
+                    <span>➖</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Dashboard View -->
+            <section id="view-dashboard" class="view active">
+                <!-- Current Status Card -->
+                <div class="status-card">
+                    <div class="status-main">
+                        <span id="glucose-value" class="glucose-value">---</span>
+                        <span id="glucose-trend" class="glucose-trend">-</span>
+                    </div>
+                    <div class="status-details">
+                        <div class="status-item">
+                            <span class="status-label">Status</span>
+                            <span id="glucose-status" class="status-value badge">--</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Delta</span>
+                            <span id="glucose-delta" class="status-value">--</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">Last Update</span>
+                            <span id="glucose-time" class="status-value">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chart Card -->
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h2>Glucose History</h2>
+                        <div class="chart-controls">
+                            <div class="time-range-buttons">
+                                <button class="time-btn" data-hours="4">4h</button>
+                                <button class="time-btn active" data-hours="8">8h</button>
+                                <button class="time-btn" data-hours="12">12h</button>
+                                <button class="time-btn" data-hours="24">24h</button>
+                            </div>
+                            <div class="history-nav">
+                                <button id="btn-history-back" class="nav-arrow" title="Earlier">◀</button>
+                                <span id="history-range" class="history-range">Now</span>
+                                <button id="btn-history-forward" class="nav-arrow" title="Later" disabled>▶</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="glucose-chart"></canvas>
+                    </div>
+                    <div class="chart-legend">
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: var(--color-in-range)"></span>
+                            <span>In Range</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: var(--color-high)"></span>
+                            <span>High</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: var(--color-low)"></span>
+                            <span>Low</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: var(--color-urgent)"></span>
+                            <span>Urgent</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings View -->
+            <section id="view-settings" class="view">
+                <div class="settings-container">
+                    <!-- Connection Settings -->
+                    <div class="settings-section">
+                        <h2 class="settings-title">
+                            <span class="settings-icon">🔌</span>
+                            Connection
+                        </h2>
+                        <div class="settings-group">
+                            <div class="form-field">
+                                <label for="nightscout-url">Nightscout URL</label>
+                                <input type="url" id="nightscout-url" placeholder="https://your-nightscout.herokuapp.com">
+                                <span class="form-hint">Your Nightscout instance URL</span>
+                            </div>
+                            <div class="form-field">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="use-token">
+                                    <span class="checkbox-text">Use API Token (recommended)</span>
+                                </label>
+                            </div>
+                            <div class="form-field" id="field-api-secret">
+                                <label for="api-secret">API Secret</label>
+                                <input type="password" id="api-secret" placeholder="Your API secret">
+                            </div>
+                            <div class="form-field hidden" id="field-api-token">
+                                <label for="api-token">API Token</label>
+                                <input type="text" id="api-token" placeholder="Your API token">
+                                <span class="form-hint">Generate from Admin Tools in Nightscout</span>
+                            </div>
+                            <div class="form-actions">
+                                <button id="btn-test-connection" class="btn btn-secondary">Test Connection</button>
+                                <span id="connection-status" class="connection-status"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Display Settings -->
+                    <div class="settings-section">
+                        <h2 class="settings-title">
+                            <span class="settings-icon">🖥️</span>
+                            Display
+                        </h2>
+                        <div class="settings-group">
+                            <div class="form-field">
+                                <label for="unit">Glucose Unit</label>
+                                <select id="unit">
+                                    <option value="mg/dL">mg/dL</option>
+                                    <option value="mmol/L">mmol/L</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label for="refresh-interval">Refresh Interval</label>
+                                <select id="refresh-interval">
+                                    <option value="30">30 seconds</option>
+                                    <option value="60">1 minute</option>
+                                    <option value="120">2 minutes</option>
+                                    <option value="180">3 minutes</option>
+                                    <option value="300">5 minutes</option>
+                                    <option value="600">10 minutes</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Glucose Thresholds -->
+                    <div class="settings-section">
+                        <h2 class="settings-title">
+                            <span class="settings-icon">📏</span>
+                            Glucose Thresholds <span class="unit-display">(mg/dL)</span>
+                        </h2>
+                        <div class="settings-group thresholds-grid">
+                            <div class="form-field">
+                                <label for="urgent-low">Urgent Low</label>
+                                <input type="number" id="urgent-low" min="20" max="100" value="55">
+                            </div>
+                            <div class="form-field">
+                                <label for="target-low">Target Low</label>
+                                <input type="number" id="target-low" min="40" max="120" value="70">
+                            </div>
+                            <div class="form-field">
+                                <label for="target-high">Target High</label>
+                                <input type="number" id="target-high" min="100" max="300" value="180">
+                            </div>
+                            <div class="form-field">
+                                <label for="urgent-high">Urgent High</label>
+                                <input type="number" id="urgent-high" min="150" max="400" value="250">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Alert Settings -->
+                    <div class="settings-section">
+                        <h2 class="settings-title">
+                            <span class="settings-icon">🔔</span>
+                            Alerts
+                        </h2>
+                        <div class="settings-group">
+                            <div class="form-field">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="enable-urgent-low-alert" checked>
+                                    <span class="checkbox-text">Urgent Low Alert</span>
+                                </label>
+                            </div>
+                            <div class="form-field">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="enable-low-alert" checked>
+                                    <span class="checkbox-text">Low Alert</span>
+                                </label>
+                            </div>
+                            <div class="form-field">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="enable-high-alert" checked>
+                                    <span class="checkbox-text">High Alert</span>
+                                </label>
+                            </div>
+                            <div class="form-field">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="enable-urgent-high-alert" checked>
+                                    <span class="checkbox-text">Urgent High Alert</span>
+                                </label>
+                            </div>
+                            <div class="form-field">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="enable-sound-alerts" checked>
+                                    <span class="checkbox-text">Enable Sound</span>
+                                </label>
+                            </div>
+                            <div class="form-field">
+                                <label for="repeat-alert-minutes">Repeat Alert Every</label>
+                                <select id="repeat-alert-minutes">
+                                    <option value="0">Don't repeat</option>
+                                    <option value="5">5 minutes</option>
+                                    <option value="10">10 minutes</option>
+                                    <option value="15">15 minutes</option>
+                                    <option value="30">30 minutes</option>
+                                </select>
+                            </div>
+                            <div class="form-actions">
+                                <button id="btn-test-notification" class="btn btn-secondary">Test Notification</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chart Settings -->
+                    <div class="settings-section">
+                        <h2 class="settings-title">
+                            <span class="settings-icon">📈</span>
+                            Chart
+                        </h2>
+                        <div class="settings-group">
+                            <div class="form-field">
+                                <label for="chart-style">Chart Style</label>
+                                <select id="chart-style">
+                                    <option value="both">Line with Points</option>
+                                    <option value="line">Line Only</option>
+                                    <option value="points">Points Only</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label for="chart-time-range">Default Time Range</label>
+                                <select id="chart-time-range">
+                                    <option value="4">4 hours</option>
+                                    <option value="8">8 hours</option>
+                                    <option value="12">12 hours</option>
+                                    <option value="24">24 hours</option>
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label for="chart-max-history">Max History (days)</label>
+                                <input type="number" id="chart-max-history" min="1" max="30" value="7">
+                            </div>
+                            <div class="form-field">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="chart-show-target" checked>
+                                    <span class="checkbox-text">Show Target Range Band</span>
+                                </label>
+                            </div>
+                            <div class="form-field">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="chart-show-now" checked>
+                                    <span class="checkbox-text">Show Current Time Marker</span>
+                                </label>
+                            </div>
+                            <h3 class="settings-subtitle">Colors</h3>
+                            <div class="color-grid">
+                                <div class="form-field">
+                                    <label for="color-in-range">In Range</label>
+                                    <input type="color" id="color-in-range" value="#4ade80">
+                                </div>
+                                <div class="form-field">
+                                    <label for="color-high">High</label>
+                                    <input type="color" id="color-high" value="#facc15">
+                                </div>
+                                <div class="form-field">
+                                    <label for="color-low">Low</label>
+                                    <input type="color" id="color-low" value="#f97316">
+                                </div>
+                                <div class="form-field">
+                                    <label for="color-urgent">Urgent</label>
+                                    <input type="color" id="color-urgent" value="#ef4444">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System Settings -->
+                    <div class="settings-section">
+                        <h2 class="settings-title">
+                            <span class="settings-icon">💻</span>
+                            System
+                        </h2>
+                        <div class="settings-group">
+                            <div class="form-field">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="start-minimized" checked>
+                                    <span class="checkbox-text">Start Minimized to Tray</span>
+                                </label>
+                            </div>
+                            <div class="form-field">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="auto-start">
+                                    <span class="checkbox-text">Start on System Boot</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Save Button -->
+                    <div class="settings-footer">
+                        <button id="btn-save-settings" class="btn btn-primary btn-large">Save Settings</button>
+                        <span id="save-status" class="save-status"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Not Configured Overlay -->
+            <div id="overlay-not-configured" class="overlay hidden">
+                <div class="overlay-content">
+                    <div class="overlay-icon">⚙️</div>
+                    <h2>Welcome to Nightscout Tray</h2>
+                    <p>Please configure your Nightscout connection in Settings to get started.</p>
+                    <button class="btn btn-primary" onclick="switchView('settings')">Go to Settings</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="/src/js/main.js"></script>
+</body>
+</html>

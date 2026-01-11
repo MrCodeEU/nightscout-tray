@@ -1,0 +1,63 @@
+# Maintainer: mrcode <your-email@example.com>
+pkgname=nightscout-tray
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="Nightscout glucose monitoring tray application"
+arch=('x86_64' 'aarch64')
+url="https://github.com/mrcode/nightscout-tray"
+license=('MIT')
+depends=('gtk3' 'webkit2gtk' 'libappindicator-gtk3')
+makedepends=('go>=1.22' 'nodejs>=20' 'npm')
+provides=("$pkgname")
+conflicts=("$pkgname-git" "$pkgname-bin")
+source=("$pkgname-$pkgver.tar.gz::https://github.com/mrcode/$pkgname/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+    cd "$srcdir/$pkgname-$pkgver"
+    
+    # Setup Go module cache
+    export GOPATH="$srcdir/go"
+    export GOMODCACHE="$GOPATH/pkg/mod"
+    
+    go mod download
+}
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    
+    export GOPATH="$srcdir/go"
+    export GOMODCACHE="$GOPATH/pkg/mod"
+    export CGO_CFLAGS="${CFLAGS}"
+    export CGO_CXXFLAGS="${CXXFLAGS}"
+    export CGO_LDFLAGS="${LDFLAGS}"
+    export GOFLAGS="-buildmode=pie -trimpath -ldflags=-linkmode=external -mod=readonly -modcacherw"
+    
+    # Build frontend
+    cd frontend
+    npm ci
+    npm run build
+    cd ..
+    
+    # Install wails CLI
+    go install github.com/wailsapp/wails/v2/cmd/wails@latest
+    
+    # Build with wails
+    "$GOPATH/bin/wails" build -platform linux/$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    
+    # Install binary
+    install -Dm755 "build/bin/$pkgname" "$pkgdir/usr/bin/$pkgname"
+    
+    # Install desktop file
+    install -Dm644 "build/linux/$pkgname.desktop" "$pkgdir/usr/share/applications/$pkgname.desktop"
+    
+    # Install icon
+    install -Dm644 "build/appicon.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/$pkgname.png"
+    
+    # Install license
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

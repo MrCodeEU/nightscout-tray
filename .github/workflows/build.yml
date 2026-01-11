@@ -1,0 +1,645 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main, develop]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: '1.22'
+  NODE_VERSION: '20'
+  APP_NAME: nightscout-tray
+
+jobs:
+  # Lint and test job
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.out
+          fail_ci_if_error: false
+
+  # Build for Linux
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.0-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build Linux binary
+        env:
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          wails build -platform linux/${{ matrix.arch }} -o ${{ env.APP_NAME }}-linux-${{ matrix.arch }}
+
+      - name: Create release tarball
+        run: |
+          mkdir -p release-tar
+          cp build/bin/${{ env.APP_NAME }}-linux-${{ matrix.arch }} release-tar/${{ env.APP_NAME }}
+          cp build/linux/${{ env.APP_NAME }}.desktop release-tar/
+          cp build/appicon.png release-tar/${{ env.APP_NAME }}.png
+          cd release-tar
+          tar -czvf ../${{ env.APP_NAME }}-linux-${{ matrix.arch }}.tar.gz *
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            build/bin/${{ env.APP_NAME }}-linux-${{ matrix.arch }}
+            ${{ env.APP_NAME }}-linux-${{ matrix.arch }}.tar.gz
+
+  # Build for Windows
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    needs: lint-and-test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build Windows binary
+        run: wails build -platform windows/amd64 -nsis
+
+      - name: Create Windows ZIP
+        shell: pwsh
+        run: |
+          mkdir release-zip
+          Copy-Item "build/bin/${{ env.APP_NAME }}.exe" "release-zip/"
+          Compress-Archive -Path "release-zip/*" -DestinationPath "${{ env.APP_NAME }}-windows-amd64.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-amd64
+          path: |
+            build/bin/*.exe
+            build/bin/*-installer.exe
+            ${{ env.APP_NAME }}-windows-amd64.zip
+
+  # Build for macOS
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+    needs: lint-and-test
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Build macOS app
+        run: |
+          wails build -platform darwin/${{ matrix.arch }}
+
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "${{ env.APP_NAME }}" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "${{ env.APP_NAME }}.app" 175 120 \
+            --hide-extension "${{ env.APP_NAME }}.app" \
+            --app-drop-link 425 120 \
+            "${{ env.APP_NAME }}-darwin-${{ matrix.arch }}.dmg" \
+            "build/bin/${{ env.APP_NAME }}.app" || true
+
+      - name: Create macOS tarball
+        run: |
+          mkdir -p release-tar
+          cp -r "build/bin/${{ env.APP_NAME }}.app" release-tar/
+          # Extract binary for homebrew
+          cp "build/bin/${{ env.APP_NAME }}.app/Contents/MacOS/${{ env.APP_NAME }}" release-tar/${{ env.APP_NAME }}
+          cd release-tar
+          tar -czvf ../${{ env.APP_NAME }}-darwin-${{ matrix.arch }}.tar.gz ${{ env.APP_NAME }}
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: |
+            build/bin/*.app
+            *.dmg
+            ${{ env.APP_NAME }}-darwin-${{ matrix.arch }}.tar.gz
+
+  # Package Linux distributions
+  package-linux:
+    name: Package Linux
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Linux amd64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-amd64
+          path: ./bin
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm ruby ruby-dev rubygems build-essential
+          sudo gem install --no-document fpm
+
+      - name: Make binary executable
+        run: chmod +x ./bin/${{ env.APP_NAME }}-linux-amd64
+
+      - name: Create DEB package
+        run: |
+          fpm -s dir -t deb \
+            -n ${{ env.APP_NAME }} \
+            -v ${GITHUB_REF_NAME#v} \
+            --description "Nightscout glucose monitoring tray application" \
+            --url "https://github.com/${{ github.repository }}" \
+            --maintainer "${{ github.repository_owner }}" \
+            --license MIT \
+            --architecture amd64 \
+            --depends libgtk-3-0 \
+            --depends libwebkit2gtk-4.0-37 \
+            --depends libappindicator3-1 \
+            ./bin/${{ env.APP_NAME }}-linux-amd64=/usr/bin/${{ env.APP_NAME }} \
+            ./build/linux/${{ env.APP_NAME }}.desktop=/usr/share/applications/${{ env.APP_NAME }}.desktop \
+            ./build/appicon.png=/usr/share/icons/hicolor/256x256/apps/${{ env.APP_NAME }}.png
+
+      - name: Create RPM package
+        run: |
+          fpm -s dir -t rpm \
+            -n ${{ env.APP_NAME }} \
+            -v ${GITHUB_REF_NAME#v} \
+            --description "Nightscout glucose monitoring tray application" \
+            --url "https://github.com/${{ github.repository }}" \
+            --maintainer "${{ github.repository_owner }}" \
+            --license MIT \
+            --architecture x86_64 \
+            --depends gtk3 \
+            --depends webkit2gtk3 \
+            --depends libappindicator-gtk3 \
+            ./bin/${{ env.APP_NAME }}-linux-amd64=/usr/bin/${{ env.APP_NAME }} \
+            ./build/linux/${{ env.APP_NAME }}.desktop=/usr/share/applications/${{ env.APP_NAME }}.desktop \
+            ./build/appicon.png=/usr/share/icons/hicolor/256x256/apps/${{ env.APP_NAME }}.png
+
+      - name: Create AppImage
+        run: |
+          # Download appimagetool
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          
+          # Create AppDir structure
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          
+          cp ./bin/${{ env.APP_NAME }}-linux-amd64 AppDir/usr/bin/${{ env.APP_NAME }}
+          cp ./build/linux/${{ env.APP_NAME }}.desktop AppDir/usr/share/applications/
+          cp ./build/appicon.png AppDir/usr/share/icons/hicolor/256x256/apps/${{ env.APP_NAME }}.png
+          
+          # Create AppRun
+          cat > AppDir/AppRun << 'EOF'
+          #!/bin/bash
+          SELF=$(readlink -f "$0")
+          HERE=${SELF%/*}
+          exec "${HERE}/usr/bin/nightscout-tray" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+          
+          # Copy desktop file and icon to root
+          cp ./build/linux/${{ env.APP_NAME }}.desktop AppDir/
+          cp ./build/appicon.png AppDir/${{ env.APP_NAME }}.png
+          
+          # Create AppImage
+          ./appimagetool-x86_64.AppImage AppDir ${{ env.APP_NAME }}-x86_64.AppImage
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            *.deb
+            *.rpm
+            *.AppImage
+
+  # Create release
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-windows, build-macos, package-linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          
+          # Linux binaries and tarballs
+          cp artifacts/linux-amd64/${{ env.APP_NAME }}-linux-amd64 release/ || true
+          cp artifacts/linux-amd64/${{ env.APP_NAME }}-linux-amd64.tar.gz release/ || true
+          cp artifacts/linux-arm64/${{ env.APP_NAME }}-linux-arm64 release/ || true
+          cp artifacts/linux-arm64/${{ env.APP_NAME }}-linux-arm64.tar.gz release/ || true
+          
+          # Linux packages
+          cp artifacts/linux-packages/*.deb release/ || true
+          cp artifacts/linux-packages/*.rpm release/ || true
+          cp artifacts/linux-packages/*.AppImage release/ || true
+          
+          # Windows
+          cp artifacts/windows-amd64/*.exe release/ || true
+          cp artifacts/windows-amd64/${{ env.APP_NAME }}-windows-amd64.zip release/ || true
+          
+          # macOS
+          cp artifacts/macos-amd64/*.dmg release/ || true
+          cp artifacts/macos-amd64/${{ env.APP_NAME }}-darwin-amd64.tar.gz release/ || true
+          cp artifacts/macos-arm64/*.dmg release/ || true
+          cp artifacts/macos-arm64/${{ env.APP_NAME }}-darwin-arm64.tar.gz release/ || true
+          
+          # Create checksums
+          cd release
+          sha256sum * > SHA256SUMS.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Update Homebrew Tap
+  update-homebrew:
+    name: Update Homebrew Tap
+    runs-on: ubuntu-latest
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download release checksums
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          curl -sSL "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/SHA256SUMS.txt" -o SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Extract SHA256 sums
+        id: sha256
+        run: |
+          echo "darwin_amd64=$(grep 'darwin-amd64.tar.gz' SHA256SUMS.txt | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          echo "darwin_arm64=$(grep 'darwin-arm64.tar.gz' SHA256SUMS.txt | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          echo "linux_amd64=$(grep 'linux-amd64.tar.gz' SHA256SUMS.txt | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          echo "linux_arm64=$(grep 'linux-arm64.tar.gz' SHA256SUMS.txt | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Generate Homebrew formula
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          cat > nightscout-tray.rb << 'FORMULA_EOF'
+          # typed: false
+          # frozen_string_literal: true
+          
+          class NightscoutTray < Formula
+            desc "Nightscout glucose monitoring tray application"
+            homepage "https://github.com/${{ github.repository }}"
+            license "MIT"
+            version "VERSION_PLACEHOLDER"
+          
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/${{ github.repository }}/releases/download/vVERSION_PLACEHOLDER/${{ env.APP_NAME }}-darwin-arm64.tar.gz"
+                sha256 "SHA256_DARWIN_ARM64_PLACEHOLDER"
+              else
+                url "https://github.com/${{ github.repository }}/releases/download/vVERSION_PLACEHOLDER/${{ env.APP_NAME }}-darwin-amd64.tar.gz"
+                sha256 "SHA256_DARWIN_AMD64_PLACEHOLDER"
+              end
+            end
+          
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/${{ github.repository }}/releases/download/vVERSION_PLACEHOLDER/${{ env.APP_NAME }}-linux-arm64.tar.gz"
+                sha256 "SHA256_LINUX_ARM64_PLACEHOLDER"
+              else
+                url "https://github.com/${{ github.repository }}/releases/download/vVERSION_PLACEHOLDER/${{ env.APP_NAME }}-linux-amd64.tar.gz"
+                sha256 "SHA256_LINUX_AMD64_PLACEHOLDER"
+              end
+          
+              depends_on "gtk+3"
+              depends_on "webkit2gtk"
+              depends_on "libappindicator-gtk3" => :recommended
+            end
+          
+            def install
+              bin.install "${{ env.APP_NAME }}"
+            end
+          
+            def caveats
+              <<~EOS
+                Nightscout Tray has been installed!
+                
+                To start: nightscout-tray
+                
+                On first run, configure your Nightscout URL in Settings.
+              EOS
+            end
+          
+            test do
+              assert_predicate bin/"${{ env.APP_NAME }}", :executable?
+            end
+          end
+          FORMULA_EOF
+          
+          # Replace placeholders
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" nightscout-tray.rb
+          sed -i "s/SHA256_DARWIN_AMD64_PLACEHOLDER/${{ steps.sha256.outputs.darwin_amd64 }}/g" nightscout-tray.rb
+          sed -i "s/SHA256_DARWIN_ARM64_PLACEHOLDER/${{ steps.sha256.outputs.darwin_arm64 }}/g" nightscout-tray.rb
+          sed -i "s/SHA256_LINUX_AMD64_PLACEHOLDER/${{ steps.sha256.outputs.linux_amd64 }}/g" nightscout-tray.rb
+          sed -i "s/SHA256_LINUX_ARM64_PLACEHOLDER/${{ steps.sha256.outputs.linux_arm64 }}/g" nightscout-tray.rb
+          
+          cat nightscout-tray.rb
+
+      - name: Push to Homebrew tap
+        uses: dmnemec/copy_file_to_another_repo_action@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        with:
+          source_file: 'nightscout-tray.rb'
+          destination_repo: '${{ github.repository_owner }}/homebrew-tap'
+          destination_folder: 'Formula'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          user_name: 'github-actions[bot]'
+          commit_message: 'Update nightscout-tray to ${{ github.ref_name }}'
+        continue-on-error: true
+
+  # Update Scoop Bucket
+  update-scoop:
+    name: Update Scoop Bucket
+    runs-on: ubuntu-latest
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download release checksums
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          curl -sSL "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/SHA256SUMS.txt" -o SHA256SUMS.txt
+
+      - name: Extract SHA256 for Windows
+        id: sha256
+        run: |
+          echo "windows_amd64=$(grep 'windows-amd64.zip' SHA256SUMS.txt | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Generate Scoop manifest
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          cat > nightscout-tray.json << EOF
+          {
+              "version": "${VERSION}",
+              "description": "Nightscout glucose monitoring tray application",
+              "homepage": "https://github.com/${{ github.repository }}",
+              "license": "MIT",
+              "architecture": {
+                  "64bit": {
+                      "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${{ env.APP_NAME }}-windows-amd64.zip",
+                      "hash": "${{ steps.sha256.outputs.windows_amd64 }}"
+                  }
+              },
+              "bin": "${{ env.APP_NAME }}.exe",
+              "shortcuts": [
+                  ["${{ env.APP_NAME }}.exe", "Nightscout Tray"]
+              ],
+              "checkver": {
+                  "github": "https://github.com/${{ github.repository }}"
+              },
+              "autoupdate": {
+                  "architecture": {
+                      "64bit": {
+                          "url": "https://github.com/${{ github.repository }}/releases/download/v\$version/${{ env.APP_NAME }}-windows-amd64.zip"
+                      }
+                  }
+              }
+          }
+          EOF
+          cat nightscout-tray.json
+
+      - name: Push to Scoop bucket
+        uses: dmnemec/copy_file_to_another_repo_action@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+        with:
+          source_file: 'nightscout-tray.json'
+          destination_repo: '${{ github.repository_owner }}/scoop-bucket'
+          destination_folder: 'bucket'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          user_name: 'github-actions[bot]'
+          commit_message: 'Update nightscout-tray to ${{ github.ref_name }}'
+        continue-on-error: true
+
+  # Create AUR PKGBUILD artifact
+  create-pkgbuild:
+    name: Create PKGBUILD
+    runs-on: ubuntu-latest
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download release checksums
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          curl -sSL "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/SHA256SUMS.txt" -o SHA256SUMS.txt
+
+      - name: Extract SHA256 for Linux
+        id: sha256
+        run: |
+          echo "linux_amd64=$(grep 'linux-amd64.tar.gz' SHA256SUMS.txt | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          echo "linux_arm64=$(grep 'linux-arm64.tar.gz' SHA256SUMS.txt | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Generate PKGBUILD (binary)
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          cat > PKGBUILD << EOF
+          # Maintainer: ${{ github.repository_owner }}
+          pkgname=${{ env.APP_NAME }}-bin
+          pkgver=${VERSION}
+          pkgrel=1
+          pkgdesc="Nightscout glucose monitoring tray application (pre-built binary)"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/${{ github.repository }}"
+          license=('MIT')
+          depends=('gtk3' 'webkit2gtk' 'libappindicator-gtk3')
+          provides=('${{ env.APP_NAME }}')
+          conflicts=('${{ env.APP_NAME }}' '${{ env.APP_NAME }}-git')
+          source_x86_64=("\$pkgname-\$pkgver-x86_64.tar.gz::https://github.com/${{ github.repository }}/releases/download/v\$pkgver/${{ env.APP_NAME }}-linux-amd64.tar.gz")
+          source_aarch64=("\$pkgname-\$pkgver-aarch64.tar.gz::https://github.com/${{ github.repository }}/releases/download/v\$pkgver/${{ env.APP_NAME }}-linux-arm64.tar.gz")
+          sha256sums_x86_64=('${{ steps.sha256.outputs.linux_amd64 }}')
+          sha256sums_aarch64=('${{ steps.sha256.outputs.linux_arm64 }}')
+
+          package() {
+              cd "\$srcdir"
+              install -Dm755 "${{ env.APP_NAME }}" "\$pkgdir/usr/bin/${{ env.APP_NAME }}"
+              install -Dm644 "${{ env.APP_NAME }}.desktop" "\$pkgdir/usr/share/applications/${{ env.APP_NAME }}.desktop"
+              install -Dm644 "${{ env.APP_NAME }}.png" "\$pkgdir/usr/share/icons/hicolor/256x256/apps/${{ env.APP_NAME }}.png"
+          }
+          EOF
+
+      - name: Generate .SRCINFO
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          cat > .SRCINFO << EOF
+          pkgbase = ${{ env.APP_NAME }}-bin
+          	pkgdesc = Nightscout glucose monitoring tray application (pre-built binary)
+          	pkgver = ${VERSION}
+          	pkgrel = 1
+          	url = https://github.com/${{ github.repository }}
+          	arch = x86_64
+          	arch = aarch64
+          	license = MIT
+          	depends = gtk3
+          	depends = webkit2gtk
+          	depends = libappindicator-gtk3
+          	provides = ${{ env.APP_NAME }}
+          	conflicts = ${{ env.APP_NAME }}
+          	conflicts = ${{ env.APP_NAME }}-git
+          	source_x86_64 = ${{ env.APP_NAME }}-bin-${VERSION}-x86_64.tar.gz::https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${{ env.APP_NAME }}-linux-amd64.tar.gz
+          	sha256sums_x86_64 = ${{ steps.sha256.outputs.linux_amd64 }}
+          	source_aarch64 = ${{ env.APP_NAME }}-bin-${VERSION}-aarch64.tar.gz::https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${{ env.APP_NAME }}-linux-arm64.tar.gz
+          	sha256sums_aarch64 = ${{ steps.sha256.outputs.linux_arm64 }}
+
+          pkgname = ${{ env.APP_NAME }}-bin
+          EOF
+
+      - name: Upload PKGBUILD
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-pkgbuild
+          path: |
+            PKGBUILD
+            .SRCINFO

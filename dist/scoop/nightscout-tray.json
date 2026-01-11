@@ -1,0 +1,32 @@
+{
+    "version": "0.0.0",
+    "description": "Nightscout glucose monitoring tray application",
+    "homepage": "https://github.com/mrcode/nightscout-tray",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/mrcode/nightscout-tray/releases/download/v0.0.0/nightscout-tray-windows-amd64.zip",
+            "hash": "PLACEHOLDER_SHA256_WINDOWS_AMD64"
+        }
+    },
+    "bin": "nightscout-tray.exe",
+    "shortcuts": [
+        ["nightscout-tray.exe", "Nightscout Tray"]
+    ],
+    "checkver": {
+        "github": "https://github.com/mrcode/nightscout-tray"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/mrcode/nightscout-tray/releases/download/v$version/nightscout-tray-windows-amd64.zip"
+            }
+        }
+    },
+    "notes": [
+        "Nightscout Tray monitors your glucose data from Nightscout.",
+        "On first run, configure your Nightscout URL in Settings.",
+        "",
+        "To enable auto-start, use the option in the app's Settings menu."
+    ]
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.schema.json",
+  "name": "nightscout-tray",
+  "outputfilename": "nightscout-tray",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "mrcode",
+    "email": ""
+  },
+  "info": {
+    "companyName": "mrcode",
+    "productName": "Nightscout Tray",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2026 mrcode",
+    "comments": "Nightscout glucose monitoring tray application"
+  }
+}
