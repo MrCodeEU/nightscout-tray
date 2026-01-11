@@ -99,8 +99,8 @@ func (t *Icon) UpdateStatus(status *models.GlucoseStatus) {
 		val = status.ValueMmol
 	}
 	t.history = append(t.history, val)
-	// Keep last 30 entries (prevent tooltip wrapping)
-	if len(t.history) > 30 {
+	// Keep last 24 entries (prevent tooltip wrapping)
+	if len(t.history) > 24 {
 		t.history = t.history[1:]
 	}
 
@@ -229,87 +229,54 @@ func (t *Icon) generateMultiLineSparkline() string {
 	}
 
 	// Dynamic scaling with buffer
-
-	buffer := 30.0
-
+	buffer := 10.0
 	minVal = math.Max(0, minVal-buffer)
-
 	maxVal += buffer
-
 	rangeVal := maxVal - minVal
 
 	// Braille blocks for better alignment and resolution (4 sub-blocks high)
-
 	// Empty, 1/4, 1/2, 3/4, Full
-
 	blocks := []rune{'⠀', '⣀', '⣤', '⣶', '⣿'}
-
 	subBlocksPerLine := 4.0
 
 	rows := make([][]rune, height)
-
 	width := len(t.history)
-
 	for i := 0; i < height; i++ {
-
 		rows[i] = make([]rune, width)
-
 		for j := 0; j < width; j++ {
-
 			rows[i][j] = '⠀' // Empty Braille space
-
 		}
-
 	}
 
 	for x, val := range t.history {
-
 		normalized := (val - minVal) / rangeVal
-
 		// Total "height" in sub-blocks
-
 		totalSubBlocks := normalized * float64(height) * subBlocksPerLine
 
 		// Fill lines from bottom up
-
 		for y := 0; y < height; y++ {
-
 			// Line index from bottom (0 is bottom line)
-
 			lineIdx := height - 1 - y
-
 			// Range covered by this line
-
 			lineStart := float64(y) * subBlocksPerLine
-
 			lineEnd := float64(y+1) * subBlocksPerLine
 
 			if totalSubBlocks >= lineEnd {
-
 				// Full block
-
 				rows[lineIdx][x] = '⣿'
-
 			} else if totalSubBlocks > lineStart {
-
 				// Partial block
-
-				remainder := int(totalSubBlocks - lineStart)
-
+				// Use rounding for better accuracy
+				remainder := int(math.Round(totalSubBlocks - lineStart))
 				if remainder < 0 {
 					remainder = 0
 				}
-
 				if remainder >= len(blocks) {
 					remainder = len(blocks) - 1
 				}
-
 				rows[lineIdx][x] = blocks[remainder]
-
 			}
-
 		}
-
 	}
 
 	var result bytes.Buffer
