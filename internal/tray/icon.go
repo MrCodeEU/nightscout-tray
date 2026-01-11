@@ -56,7 +56,7 @@ func (t *Icon) onReady() {
 	systray.SetTooltip("Nightscout Tray - Loading...")
 
 	// Handle left click to open dashboard
-	systray.SetOnClick(func(menu systray.IMenu) {
+	systray.SetOnClick(func(_ systray.IMenu) {
 		if t.onShow != nil {
 			t.onShow()
 		}
