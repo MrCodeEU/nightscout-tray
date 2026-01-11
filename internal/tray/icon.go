@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/energye/systray"
+	"github.com/mrcode/nightscout-tray/internal/lib/systray"
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
 	"github.com/mrcode/nightscout-tray/internal/models"
