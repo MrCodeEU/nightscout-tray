@@ -178,15 +178,14 @@ func (g *IconGenerator) generateMultiLineSparkline() string {
 	blocks := []rune{'⠀', '⣀', '⣤', '⣶', '⣿'}
 	subBlocksPerLine := 4.0
 
-
-rows := make([][]rune, height)
+	rows := make([][]rune, height)
 	width := len(g.history)
 	for i := 0; i < height; i++ {
-	
-rows[i] = make([]rune, width)
+
+		rows[i] = make([]rune, width)
 		for j := 0; j < width; j++ {
-		
-rows[i][j] = '⠀'
+
+			rows[i][j] = '⠀'
 		}
 	}
 
@@ -198,14 +197,18 @@ rows[i][j] = '⠀'
 			lineStart := float64(y) * subBlocksPerLine
 			lineEnd := float64(y+1) * subBlocksPerLine
 			if totalSubBlocks >= lineEnd {
-			
-rows[lineIdx][x] = '⣿'
+
+				rows[lineIdx][x] = '⣿'
 			} else if totalSubBlocks > lineStart {
 				remainder := int(math.Round(totalSubBlocks - lineStart))
-				if remainder < 0 { remainder = 0 }
-				if remainder >= len(blocks) { remainder = len(blocks) - 1 }
-			
-rows[lineIdx][x] = blocks[remainder]
+				if remainder < 0 {
+					remainder = 0
+				}
+				if remainder >= len(blocks) {
+					remainder = len(blocks) - 1
+				}
+
+				rows[lineIdx][x] = blocks[remainder]
 			}
 		}
 	}
@@ -222,11 +225,17 @@ rows[lineIdx][x] = blocks[remainder]
 }
 
 func (g *IconGenerator) getMinMax() (float64, float64) {
-	if len(g.history) == 0 { return 0, 0 }
+	if len(g.history) == 0 {
+		return 0, 0
+	}
 	minV, maxV := g.history[0], g.history[0]
 	for _, v := range g.history {
-		if v < minV { minV = v }
-		if v > maxV { maxV = v }
+		if v < minV {
+			minV = v
+		}
+		if v > maxV {
+			maxV = v
+		}
 	}
 	return minV, maxV
 }
@@ -235,49 +244,81 @@ func (g *IconGenerator) getMinMax() (float64, float64) {
 
 func formatStatus(status string) string {
 	switch status {
-	case statusUrgentLow: return "Urgent Low"
-	case statusUrgentHigh: return "Urgent High"
-	case statusLow: return "Low"
-	case statusHigh: return "High"
-	case "normal": return "In Range"
-	default: return status
+	case statusUrgentLow:
+		return "Urgent Low"
+	case statusUrgentHigh:
+		return "Urgent High"
+	case statusLow:
+		return "Low"
+	case statusHigh:
+		return "High"
+	case "normal":
+		return "In Range"
+	default:
+		return status
 	}
 }
 
 func formatDuration(minutes int) string {
-	if minutes < 1 { return "just now" }
-	if minutes == 1 { return "1 minute" }
-	if minutes < 60 { return fmt.Sprintf("%d minutes", minutes) }
+	if minutes < 1 {
+		return "just now"
+	}
+	if minutes == 1 {
+		return "1 minute"
+	}
+	if minutes < 60 {
+		return fmt.Sprintf("%d minutes", minutes)
+	}
 	hours := minutes / 60
-	if hours == 1 { return "1 hour" }
+	if hours == 1 {
+		return "1 hour"
+	}
 	return fmt.Sprintf("%d hours", hours)
 }
 
 func formatCompactStatus(status string) string {
 	switch status {
-	case statusUrgentLow: return "🔻URGENT"
-	case statusUrgentHigh: return "🔺URGENT"
-	case statusLow: return "↓Low"
-	case statusHigh: return "↑High"
-	case "normal": return "✓OK"
-	default: return status
+	case statusUrgentLow:
+		return "🔻URGENT"
+	case statusUrgentHigh:
+		return "🔺URGENT"
+	case statusLow:
+		return "↓Low"
+	case statusHigh:
+		return "↑High"
+	case "normal":
+		return "✓OK"
+	default:
+		return status
 	}
 }
 
 func formatCompactDuration(minutes int) string {
-	if minutes < 1 { return "now" }
-	if minutes < 60 { return fmt.Sprintf("%dm", minutes) }
+	if minutes < 1 {
+		return "now"
+	}
+	if minutes < 60 {
+		return fmt.Sprintf("%dm", minutes)
+	}
 	return fmt.Sprintf("%dh", minutes/60)
 }
 
 func getStatusColor(status *models.GlucoseStatus) string {
-	if status == nil { return "#808080" }
-	if status.StaleMinutes > 7 { return "#9ca3af" }
+	if status == nil {
+		return "#808080"
+	}
+	if status.StaleMinutes > 7 {
+		return "#9ca3af"
+	}
 	switch status.Status {
-	case "urgent_low", "urgent_high": return "#ef4444"
-	case statusLow: return "#f97316"
-	case statusHigh: return "#facc15"
-	default: return "#4ade80"
+	case "urgent_low", "urgent_high":
+		return "#ef4444"
+	case statusLow:
+		return "#f97316"
+	case statusHigh:
+		return "#facc15"
+	default:
+		return "#4ade80"
 	}
 }
 
@@ -290,7 +331,9 @@ func parseHexColor(hex string) (r, g, b byte) {
 
 func loadFont(dc *gg.Context, size float64) error {
 	font, err := truetype.Parse(goregular.TTF)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	face := truetype.NewFace(font, &truetype.Options{Size: size})
 	dc.SetFontFace(face)
 	return nil
@@ -302,12 +345,18 @@ func drawArrow(dc *gg.Context, x, y, size float64, direction string) {
 	dc.Translate(x, y)
 	var angle float64
 	switch direction {
-	case "DoubleUp", "SingleUp": angle = 0
-	case "FortyFiveUp": angle = 45
-	case "Flat": angle = 90
-	case "FortyFiveDown": angle = 135
-	case "DoubleDown", "SingleDown": angle = 180
-	default: return
+	case "DoubleUp", "SingleUp":
+		angle = 0
+	case "FortyFiveUp":
+		angle = 45
+	case "Flat":
+		angle = 90
+	case "FortyFiveDown":
+		angle = 135
+	case "DoubleDown", "SingleDown":
+		angle = 180
+	default:
+		return
 	}
 	dc.Rotate(gg.Radians(angle))
 	if direction == "DoubleUp" || direction == "DoubleDown" {
@@ -331,4 +380,3 @@ func drawSingleArrow(dc *gg.Context, ox, oy, s float64) {
 	dc.ClosePath()
 	dc.Fill()
 }
-
