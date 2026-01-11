@@ -335,7 +335,7 @@ func (t *winTray) wndProc(hWnd Handle, message uint32, wParam, lParam uintptr) (
 		menuItemId := int32(wParam)
 		// https://docs.microsoft.com/en-us/windows/win32/menurc/wm-command#menus
 		if menuItemId != -1 {
-			systrayMenuItemSelected(uint32(wParam))
+			systrayMenuItemSelected(menuItemId)
 		}
 	case WM_CLOSE:
 		pDestroyWindow.Call(uintptr(t.window))
