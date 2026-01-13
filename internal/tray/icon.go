@@ -121,12 +121,26 @@ func (t *Icon) UpdateStatus(status *models.GlucoseStatus) {
 	var tooltip string
 	if runtime.GOOS == "windows" {
 		// Windows has a 128 UTF-16 character limit for tooltips, so use a compact format
-		tooltip = fmt.Sprintf("%s %s %s\nStatus: %s\nUpdated: %s ago",
-			valueStr, t.settings.Unit, status.Trend,
-			t.formatStatus(status.Status),
-			t.formatDuration(status.StaleMinutes))
-		if status.IsStale {
-			tooltip += "\n⚠️ Stale"
+		sparkline := t.generateCompactSparkline()
+		if sparkline != "" {
+			// Ultra-compact: value on top, 2-line graph, status at bottom
+			staleIndicator := ""
+			if status.IsStale {
+				staleIndicator = " ⚠"
+			}
+			tooltip = fmt.Sprintf("%s%s %s\n%s\n%s %s",
+				valueStr, t.settings.Unit, status.Trend,
+				sparkline,
+				t.formatCompactStatus(status.Status),
+				t.formatCompactDuration(status.StaleMinutes)+staleIndicator)
+		} else {
+			tooltip = fmt.Sprintf("%s%s %s\n%s %s",
+				valueStr, t.settings.Unit, status.Trend,
+				t.formatCompactStatus(status.Status),
+				t.formatCompactDuration(status.StaleMinutes))
+			if status.IsStale {
+				tooltip += " ⚠"
+			}
 		}
 	} else {
 		// Linux/macOS: Use full tooltip with sparkline
@@ -137,7 +151,7 @@ func (t *Icon) UpdateStatus(status *models.GlucoseStatus) {
 			t.formatStatus(status.Status),
 			t.formatDuration(status.StaleMinutes))
 		if status.IsStale {
-			tooltip += "\n⚠️ Data may be stale"
+			tooltip += "\n⚠️ No fresh data (check connection)"
 		}
 	}
 
@@ -203,6 +217,110 @@ func (t *Icon) formatDuration(minutes int) string {
 		return "1 hour"
 	}
 	return fmt.Sprintf("%d hours", hours)
+}
+
+// formatCompactStatus returns a compact status string for Windows tooltips
+func (t *Icon) formatCompactStatus(status string) string {
+	switch status {
+	case "urgent_low":
+		return "🔻URGENT"
+	case "urgent_high":
+		return "🔺URGENT"
+	case "low":
+		return "↓Low"
+	case "high":
+		return "↑High"
+	case "normal":
+		return "✓OK"
+	default:
+		return status
+	}
+}
+
+// formatCompactDuration formats minutes into a compact duration for Windows
+func (t *Icon) formatCompactDuration(minutes int) string {
+	if minutes < 1 {
+		return "now"
+	}
+	if minutes < 60 {
+		return fmt.Sprintf("%dm", minutes)
+	}
+	hours := minutes / 60
+	return fmt.Sprintf("%dh", hours)
+}
+
+// generateCompactSparkline creates a 2-line compact sparkline for Windows
+func (t *Icon) generateCompactSparkline() string {
+	if len(t.history) < 2 {
+		return ""
+	}
+
+	// Find min/max
+	minVal := t.history[0]
+	maxVal := t.history[0]
+	for _, v := range t.history {
+		if v < minVal {
+			minVal = v
+		}
+		if v > maxVal {
+			maxVal = v
+		}
+	}
+
+	rangeVal := maxVal - minVal
+	if rangeVal == 0 {
+		rangeVal = 1 // Avoid division by zero
+	}
+
+	// Create 2-line sparkline with proper alignment
+	// Each column represents one data point, rendered across both lines
+	var topLine, bottomLine bytes.Buffer
+
+	for _, val := range t.history {
+		normalized := (val - minVal) / rangeVal
+		// Scale to 0-4 range (each line represents half the height)
+		height := normalized * 4.0
+
+		// Determine top and bottom characters for this column
+		// Think of it as a bar growing from bottom to top
+		var topChar, bottomChar rune
+
+		// Using Braille patterns for smoother representation
+		// Each Braille character can show fine-grained vertical positions
+		if height >= 4 { // 100%: full height
+			topChar = '⣿'
+			bottomChar = '⣿'
+		} else if height >= 3.5 { // 87.5-100%
+			topChar = '⣶'
+			bottomChar = '⣿'
+		} else if height >= 3 { // 75-87.5%
+			topChar = '⣤'
+			bottomChar = '⣿'
+		} else if height >= 2.5 { // 62.5-75%
+			topChar = '⣀'
+			bottomChar = '⣿'
+		} else if height >= 2 { // 50-62.5%
+			topChar = '⠀'
+			bottomChar = '⣿'
+		} else if height >= 1.5 { // 37.5-50%
+			topChar = '⠀'
+			bottomChar = '⣶'
+		} else if height >= 1 { // 25-37.5%
+			topChar = '⠀'
+			bottomChar = '⣤'
+		} else if height >= 0.5 { // 12.5-25%
+			topChar = '⠀'
+			bottomChar = '⣀'
+		} else { // 0-12.5%: both empty
+			topChar = '⠀'
+			bottomChar = '⠀'
+		}
+
+		topLine.WriteRune(topChar)
+		bottomLine.WriteRune(bottomChar)
+	}
+
+	return topLine.String() + "\n" + bottomLine.String()
 }
 
 // generateMultiLineSparkline creates a multi-line ASCII chart
@@ -457,6 +575,11 @@ func (t *Icon) drawSingleArrow(dc *gg.Context, ox, oy, s float64) {
 func (t *Icon) getStatusColor() string {
 	if t.lastStatus == nil {
 		return "#808080" // Gray for unknown
+	}
+
+	// If data is stale (>7 minutes), show gray to indicate outdated data
+	if t.lastStatus.StaleMinutes > 7 {
+		return "#9ca3af" // Gray-400 for stale data
 	}
 
 	switch t.lastStatus.Status {

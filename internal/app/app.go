@@ -24,11 +24,13 @@ type App struct {
 	trayIcon      *tray.Icon
 	notifyManager *notifications.Manager
 
-	mu         sync.RWMutex
-	lastStatus *models.GlucoseStatus
-	ticker     *time.Ticker
-	stopChan   chan struct{}
-	isRunning  bool
+	mu               sync.RWMutex
+	lastStatus       *models.GlucoseStatus
+	lastSuccessTime  time.Time
+	consecutiveErrors int
+	ticker           *time.Ticker
+	stopChan         chan struct{}
+	isRunning        bool
 }
 
 // New creates a new App instance
@@ -164,12 +166,41 @@ func (a *App) fetchAndUpdate() {
 	// Fetch current entry
 	entry, err := client.GetCurrentEntry()
 	if err != nil {
-		if a.trayIcon != nil {
-			a.trayIcon.SetError(err)
+		a.mu.Lock()
+		a.consecutiveErrors++
+		errorCount := a.consecutiveErrors
+		lastStatus := a.lastStatus
+		lastSuccess := a.lastSuccessTime
+		a.mu.Unlock()
+
+		fmt.Printf("Error fetching glucose data (attempt %d): %v\n", errorCount, err)
+
+		// If we have last known good data, keep showing it but update staleness
+		if lastStatus != nil && !lastSuccess.IsZero() {
+			timeSinceSuccess := time.Since(lastSuccess)
+			lastStatus.StaleMinutes = int(timeSinceSuccess.Minutes())
+			lastStatus.IsStale = lastStatus.StaleMinutes > 7
+
+			if a.trayIcon != nil {
+				a.trayIcon.UpdateStatus(lastStatus)
+			}
+			runtime.EventsEmit(a.ctx, "glucose:update", lastStatus)
+		} else {
+			// No previous data, show error
+			if a.trayIcon != nil {
+				a.trayIcon.SetError(err)
+			}
 		}
+
 		runtime.EventsEmit(a.ctx, "glucose:error", err.Error())
 		return
 	}
+
+	// Success - reset error counter
+	a.mu.Lock()
+	a.consecutiveErrors = 0
+	a.lastSuccessTime = time.Now()
+	a.mu.Unlock()
 
 	// Create status
 	status := a.createStatus(entry)

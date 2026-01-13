@@ -6,7 +6,8 @@
       "Bash(dir \"C:\\\\Users\\\\reine\\\\go\\\\pkg\\\\mod\\\\github.com\\\\energye\")",
       "Bash(findstr:*)",
       "Bash(dir /s /b \"C:\\\\Users\\\\reine\\\\go\\\\pkg\\\\mod\\\\github.com\\\\energye\\\\systray@v1.0.2\\\\*.go\")",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(go test:*)"
     ]
   }
 }
