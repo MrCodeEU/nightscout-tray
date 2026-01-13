@@ -3,7 +3,11 @@ package main
 
 import (
 	"embed"
+	"io"
 	"log"
+	"os"
+	"runtime"
+	"strings"
 
 	"github.com/mrcode/nightscout-tray/internal/app"
 	"github.com/wailsapp/wails/v2"
@@ -19,7 +23,35 @@ var assets embed.FS
 //go:embed build/appicon.png
 var icon []byte
 
+// filteredLogWriter filters out false positive systray errors on Windows
+type filteredLogWriter struct {
+	writer io.Writer
+}
+
+func (w *filteredLogWriter) Write(p []byte) (n int, err error) {
+	msg := string(p)
+
+	// On Windows, filter out false positive systray errors that indicate success
+	// The German message "Der Vorgang wurde erfolgreich beendet" means "The operation completed successfully"
+	// This is a bug in the energye/systray library where it logs success as an error
+	if runtime.GOOS == "windows" {
+		if strings.Contains(msg, "systray error: unable to set icon") &&
+		   (strings.Contains(msg, "Der Vorgang wurde erfolgreich beendet") ||
+		    strings.Contains(msg, "The operation completed successfully") ||
+		    strings.Contains(msg, "L'opération a réussi")) { // French
+			return len(p), nil // Swallow the false error
+		}
+	}
+
+	return w.writer.Write(p)
+}
+
 func main() {
+	// Set up filtered logging on Windows to suppress false systray errors
+	if runtime.GOOS == "windows" {
+		log.SetOutput(&filteredLogWriter{writer: os.Stderr})
+	}
+
 	// Create application instance
 	application := app.New()
 

@@ -1,5 +1,7 @@
 # Build files
-/build/bin/
+/build
+/dist
+/node_modules
 /frontend/dist/
 /frontend/node_modules/
 

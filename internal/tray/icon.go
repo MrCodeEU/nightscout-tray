@@ -3,7 +3,9 @@ package tray
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"image"
 	"image/color"
 	"image/png"
 	"math"
@@ -116,18 +118,27 @@ func (t *Icon) UpdateStatus(status *models.GlucoseStatus) {
 	systray.SetTitle(displayText)
 
 	// Update tooltip with rich info
-	sparkline := t.generateMultiLineSparkline()
-
-	// Note: Native tooltips generally do not support color or rich text.
-	// We rely on ASCII/Unicode art for the chart.
-	tooltip := fmt.Sprintf("%s %s %s\n%s\nStatus: %s\nUpdated: %s ago",
-		valueStr, t.settings.Unit, status.Trend,
-		sparkline,
-		t.formatStatus(status.Status),
-		t.formatDuration(status.StaleMinutes))
-
-	if status.IsStale {
-		tooltip += "\n⚠️ Data may be stale"
+	var tooltip string
+	if runtime.GOOS == "windows" {
+		// Windows has a 128 UTF-16 character limit for tooltips, so use a compact format
+		tooltip = fmt.Sprintf("%s %s %s\nStatus: %s\nUpdated: %s ago",
+			valueStr, t.settings.Unit, status.Trend,
+			t.formatStatus(status.Status),
+			t.formatDuration(status.StaleMinutes))
+		if status.IsStale {
+			tooltip += "\n⚠️ Stale"
+		}
+	} else {
+		// Linux/macOS: Use full tooltip with sparkline
+		sparkline := t.generateMultiLineSparkline()
+		tooltip = fmt.Sprintf("%s %s %s\n%s\nStatus: %s\nUpdated: %s ago",
+			valueStr, t.settings.Unit, status.Trend,
+			sparkline,
+			t.formatStatus(status.Status),
+			t.formatDuration(status.StaleMinutes))
+		if status.IsStale {
+			tooltip += "\n⚠️ Data may be stale"
+		}
 	}
 
 	systray.SetTooltip(tooltip)
@@ -349,7 +360,12 @@ func (t *Icon) generateIcon(text string, direction string) []byte {
 		t.drawArrow(dc, width/2, height-16, 24, direction)
 	}
 
-	// Encode to PNG
+	// On Windows, convert to ICO format; otherwise use PNG
+	if runtime.GOOS == "windows" {
+		return imageToICO(dc.Image())
+	}
+
+	// Encode to PNG for Linux/macOS
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, dc.Image()); err != nil {
 		return nil
@@ -486,4 +502,63 @@ func IsTraySupported() bool {
 	default:
 		return false
 	}
+}
+
+// imageToICO converts an image to ICO format
+// ICO format structure:
+// - ICONDIR header (6 bytes)
+// - ICONDIRENTRY for each image (16 bytes)
+// - PNG data for each image
+func imageToICO(img image.Image) []byte {
+	var buf bytes.Buffer
+
+	// First, encode image as PNG
+	var pngBuf bytes.Buffer
+	if err := png.Encode(&pngBuf, img); err != nil {
+		return nil
+	}
+	pngData := pngBuf.Bytes()
+
+	// ICO file header (ICONDIR)
+	// 0-1: Reserved (must be 0)
+	binary.Write(&buf, binary.LittleEndian, uint16(0))
+	// 2-3: Type (1 = ICO, 2 = CUR)
+	binary.Write(&buf, binary.LittleEndian, uint16(1))
+	// 4-5: Number of images
+	binary.Write(&buf, binary.LittleEndian, uint16(1))
+
+	// ICONDIRENTRY for the image
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Width (0 = 256)
+	if width >= 256 {
+		buf.WriteByte(0)
+	} else {
+		buf.WriteByte(byte(width))
+	}
+	// Height (0 = 256)
+	if height >= 256 {
+		buf.WriteByte(0)
+	} else {
+		buf.WriteByte(byte(height))
+	}
+	// Color palette (0 = no palette)
+	buf.WriteByte(0)
+	// Reserved (must be 0)
+	buf.WriteByte(0)
+	// Color planes (0 or 1)
+	binary.Write(&buf, binary.LittleEndian, uint16(1))
+	// Bits per pixel
+	binary.Write(&buf, binary.LittleEndian, uint16(32))
+	// Size of image data
+	binary.Write(&buf, binary.LittleEndian, uint32(len(pngData)))
+	// Offset to image data (header + directory entry = 6 + 16 = 22)
+	binary.Write(&buf, binary.LittleEndian, uint32(22))
+
+	// Append PNG data
+	buf.Write(pngData)
+
+	return buf.Bytes()
 }

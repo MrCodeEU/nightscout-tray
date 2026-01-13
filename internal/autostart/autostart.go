@@ -135,14 +135,27 @@ func isEnabledWindows() (bool, error) {
 	cmd := exec.Command("reg", "query",
 		`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
 		"/v", appName)
-	err := cmd.Run()
-	return err == nil, nil
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// If the registry key doesn't exist, autostart is not enabled
+		outputStr := string(output)
+		if strings.Contains(outputStr, "not exist") ||
+		   strings.Contains(outputStr, "unable to find") ||
+		   strings.Contains(outputStr, "can't find") ||
+		   strings.Contains(outputStr, "nicht gefunden") ||
+		   strings.Contains(outputStr, "impossible de trouver") {
+			return false, nil
+		}
+		// For other errors, return the error
+		return false, fmt.Errorf("failed to query autostart status: %w (output: %s)", err, outputStr)
+	}
+	return true, nil
 }
 
 func enableWindows() error {
 	execPath, err := os.Executable()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
 	//nolint:gosec // G204: execPath comes from os.Executable(), not user input
@@ -152,7 +165,11 @@ func enableWindows() error {
 		"/t", "REG_SZ",
 		"/d", execPath,
 		"/f")
-	return cmd.Run()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to enable autostart: %w (output: %s)", err, string(output))
+	}
+	return nil
 }
 
 func disableWindows() error {
@@ -160,11 +177,20 @@ func disableWindows() error {
 		`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`,
 		"/v", appName,
 		"/f")
-	err := cmd.Run()
-	if err != nil && strings.Contains(err.Error(), "not exist") {
-		return nil
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// If the registry key doesn't exist, that's fine - it's already disabled
+		outputStr := string(output)
+		if strings.Contains(outputStr, "not exist") ||
+		   strings.Contains(outputStr, "unable to find") ||
+		   strings.Contains(outputStr, "can't find") ||
+		   strings.Contains(outputStr, "nicht gefunden") || // German: not found
+		   strings.Contains(outputStr, "impossible de trouver") { // French: unable to find
+			return nil
+		}
+		return fmt.Errorf("failed to disable autostart: %w (output: %s)", err, outputStr)
 	}
-	return err
+	return nil
 }
 
 // macOS implementation using LaunchAgents
