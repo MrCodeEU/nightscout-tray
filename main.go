@@ -1,6 +1,7 @@
 // Package main is the entry point for the Nightscout Tray application
 package main
 
+// change brail to better unicode + compact on windows 1 less wide + DRY use existing code?
 import (
 	"embed"
 	"io"
@@ -36,9 +37,9 @@ func (w *filteredLogWriter) Write(p []byte) (n int, err error) {
 	// This is a bug in the energye/systray library where it logs success as an error
 	if runtime.GOOS == "windows" {
 		if strings.Contains(msg, "systray error: unable to set icon") &&
-		   (strings.Contains(msg, "Der Vorgang wurde erfolgreich beendet") ||
-		    strings.Contains(msg, "The operation completed successfully") ||
-		    strings.Contains(msg, "L'opération a réussi")) { // French
+			(strings.Contains(msg, "Der Vorgang wurde erfolgreich beendet") ||
+				strings.Contains(msg, "The operation completed successfully") ||
+				strings.Contains(msg, "L'opération a réussi")) { // French
 			return len(p), nil // Swallow the false error
 		}
 	}
