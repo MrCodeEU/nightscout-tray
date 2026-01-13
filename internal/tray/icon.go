@@ -19,6 +19,14 @@ import (
 	"golang.org/x/image/font/gofont/goregular"
 )
 
+const (
+	osWindows        = "windows"
+	statusUrgentLow  = "urgent_low"
+	statusUrgentHigh = "urgent_high"
+	statusLow        = "low"
+	statusHigh       = "high"
+)
+
 // Icon represents the tray icon manager
 type Icon struct {
 	mu         sync.Mutex
@@ -119,7 +127,7 @@ func (t *Icon) UpdateStatus(status *models.GlucoseStatus) {
 
 	// Update tooltip with rich info
 	var tooltip string
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == osWindows {
 		// Windows has a 128 UTF-16 character limit for tooltips, so use a compact format
 		sparkline := t.generateCompactSparkline()
 		if sparkline != "" {
@@ -186,13 +194,13 @@ func (t *Icon) SetLoading() {
 // formatStatus returns a human-readable status string
 func (t *Icon) formatStatus(status string) string {
 	switch status {
-	case "urgent_low":
+	case statusUrgentLow:
 		return "Urgent Low"
-	case "urgent_high":
+	case statusUrgentHigh:
 		return "Urgent High"
-	case "low":
+	case statusLow:
 		return "Low"
-	case "high":
+	case statusHigh:
 		return "High"
 	case "normal":
 		return "In Range"
@@ -222,13 +230,13 @@ func (t *Icon) formatDuration(minutes int) string {
 // formatCompactStatus returns a compact status string for Windows tooltips
 func (t *Icon) formatCompactStatus(status string) string {
 	switch status {
-	case "urgent_low":
+	case statusUrgentLow:
 		return "🔻URGENT"
-	case "urgent_high":
+	case statusUrgentHigh:
 		return "🔺URGENT"
-	case "low":
+	case statusLow:
 		return "↓Low"
-	case "high":
+	case statusHigh:
 		return "↑High"
 	case "normal":
 		return "✓OK"
@@ -480,7 +488,7 @@ func (t *Icon) generateIcon(text string, direction string) []byte {
 	}
 
 	// On Windows, convert to ICO format; otherwise use PNG
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == osWindows {
 		return imageToICO(dc.Image())
 	}
 
@@ -586,9 +594,9 @@ func (t *Icon) getStatusColor() string {
 	switch t.lastStatus.Status {
 	case "urgent_low", "urgent_high":
 		return "#ef4444" // Red
-	case "low":
+	case statusLow:
 		return "#f97316" // Orange
-	case "high":
+	case statusHigh:
 		return "#facc15" // Yellow
 	default:
 		return "#4ade80" // Green
@@ -645,11 +653,11 @@ func imageToICO(img image.Image) []byte {
 
 	// ICO file header (ICONDIR)
 	// 0-1: Reserved (must be 0)
-	binary.Write(&buf, binary.LittleEndian, uint16(0))
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(0))
 	// 2-3: Type (1 = ICO, 2 = CUR)
-	binary.Write(&buf, binary.LittleEndian, uint16(1))
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(1))
 	// 4-5: Number of images
-	binary.Write(&buf, binary.LittleEndian, uint16(1))
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(1))
 
 	// ICONDIRENTRY for the image
 	bounds := img.Bounds()
@@ -673,13 +681,14 @@ func imageToICO(img image.Image) []byte {
 	// Reserved (must be 0)
 	buf.WriteByte(0)
 	// Color planes (0 or 1)
-	binary.Write(&buf, binary.LittleEndian, uint16(1))
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(1))
 	// Bits per pixel
-	binary.Write(&buf, binary.LittleEndian, uint16(32))
+	_ = binary.Write(&buf, binary.LittleEndian, uint16(32))
 	// Size of image data
-	binary.Write(&buf, binary.LittleEndian, uint32(len(pngData)))
+	// #nosec G115 -- PNG size is limited by memory and will not overflow uint32
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(len(pngData)))
 	// Offset to image data (header + directory entry = 6 + 16 = 22)
-	binary.Write(&buf, binary.LittleEndian, uint32(22))
+	_ = binary.Write(&buf, binary.LittleEndian, uint32(22))
 
 	// Append PNG data
 	buf.Write(pngData)
