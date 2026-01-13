@@ -275,6 +275,7 @@ func (t *Icon) generateCompactSparkline() string {
 	// Create 2-line sparkline with proper alignment
 	// Each column represents one data point, rendered across both lines
 	var topLine, bottomLine bytes.Buffer
+	topLine.WriteRune(' ')
 
 	for _, val := range t.history {
 		normalized := (val - minVal) / rangeVal
@@ -313,7 +314,7 @@ func (t *Icon) generateCompactSparkline() string {
 			bottomChar = '⣀'
 		} else { // 0-12.5%: both empty
 			topChar = '⠀'
-			bottomChar = '⠀'
+			bottomChar = '⣀' // not logical but visually better than empty
 		}
 
 		topLine.WriteRune(topChar)
