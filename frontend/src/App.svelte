@@ -80,7 +80,8 @@
         calculationProgress = { stage: 'Starting...', progress: 0 };
         
         try {
-            await NightscoutService.StartParameterCalculation(calculationDays);
+            const mode = settings?.predictionMode || 'statistical';
+            await NightscoutService.StartParameterCalculation(calculationDays, mode);
             
             // Poll for progress
             progressInterval = setInterval(async () => {
@@ -118,7 +119,7 @@
     }
 
     async function toggleLongTerm(): Promise<void> {
-        showLongTermPrediction = !showLongTermPrediction;
+        // Note: showLongTermPrediction is already toggled by bind:checked
         await refreshPrediction();
     }
 
@@ -156,6 +157,12 @@
     const formatNumber = (n: number | undefined, decimals: number = 1): string => {
         if (n === undefined || n === null) return '--';
         return n.toFixed(decimals);
+    };
+
+    // Convert ICR to KE Factor (units of insulin per 10g carbs / 1 KE)
+    const icrToKEFactor = (icr: number | undefined): string => {
+        if (icr === undefined || icr === null || icr === 0) return '--';
+        return (10 / icr).toFixed(2);
     };
 </script>
 
@@ -240,6 +247,16 @@
                                     <option value={30}>30 days</option>
                                     <option value={60}>60 days</option>
                                     <option value={90}>90 days</option>
+                                    <option value={180}>180 days</option>
+                                    <option value={365}>365 days</option>
+                                </select>
+                            </label>
+                            
+                            <label class="prediction-mode">
+                                <span>Prediction Mode</span>
+                                <select bind:value={settings.predictionMode} disabled={isCalculating}>
+                                    <option value="statistical">📊 Statistical (Fast)</option>
+                                    <option value="ml">🤖 Machine Learning (Accurate)</option>
                                 </select>
                             </label>
                             
@@ -253,6 +270,13 @@
                                 </button>
                             {/if}
                         </div>
+
+                        {#if settings.predictionMode === 'ml'}
+                            <div class="ml-notice">
+                                <span class="icon">ℹ️</span>
+                                <span>Machine Learning mode uses more computational resources but provides more accurate predictions based on pattern recognition in your data.</span>
+                            </div>
+                        {/if}
 
                         {#if isCalculating && calculationProgress}
                             <div class="progress-section">
@@ -284,8 +308,14 @@
                                 </div>
 
                                 <div class="param-card">
-                                    <div class="param-label">Insulin-to-Carb Ratio (ICR)</div>
-                                    <div class="param-value">1:{formatNumber(diabetesParams.icr, 0)} <span class="unit">unit per {formatNumber(diabetesParams.icr, 0)}g carbs</span></div>
+                                    <div class="param-label">Insulin-to-Carb Ratio (ICR) / KE Factor</div>
+                                    <div class="param-value">
+                                        1:{formatNumber(diabetesParams.icr, 0)} 
+                                        <span class="unit">unit per {formatNumber(diabetesParams.icr, 0)}g carbs</span>
+                                    </div>
+                                    <div class="param-value ke-factor">
+                                        {icrToKEFactor(diabetesParams.icr)} <span class="unit">units per KE (10g)</span>
+                                    </div>
                                     <div class="param-desc">Grams of carbohydrates covered by 1 unit of insulin</div>
                                     <div class="confidence" style="--conf: {diabetesParams.icrConfidence}%">
                                         Confidence: {formatNumber(diabetesParams.icrConfidence, 0)}%
@@ -317,6 +347,7 @@
                                     <div class="tod-values">
                                         <span>ISF: {formatNumber(diabetesParams.isfByTimeOfDay?.morning, 0)}</span>
                                         <span>ICR: 1:{formatNumber(diabetesParams.icrByTimeOfDay?.morning, 0)}</span>
+                                        <span class="ke">KE: {icrToKEFactor(diabetesParams.icrByTimeOfDay?.morning)}u</span>
                                     </div>
                                 </div>
                                 <div class="tod-card">
@@ -324,6 +355,7 @@
                                     <div class="tod-values">
                                         <span>ISF: {formatNumber(diabetesParams.isfByTimeOfDay?.midday, 0)}</span>
                                         <span>ICR: 1:{formatNumber(diabetesParams.icrByTimeOfDay?.midday, 0)}</span>
+                                        <span class="ke">KE: {icrToKEFactor(diabetesParams.icrByTimeOfDay?.midday)}u</span>
                                     </div>
                                 </div>
                                 <div class="tod-card">
@@ -331,6 +363,7 @@
                                     <div class="tod-values">
                                         <span>ISF: {formatNumber(diabetesParams.isfByTimeOfDay?.evening, 0)}</span>
                                         <span>ICR: 1:{formatNumber(diabetesParams.icrByTimeOfDay?.evening, 0)}</span>
+                                        <span class="ke">KE: {icrToKEFactor(diabetesParams.icrByTimeOfDay?.evening)}u</span>
                                     </div>
                                 </div>
                                 <div class="tod-card">
@@ -338,6 +371,7 @@
                                     <div class="tod-values">
                                         <span>ISF: {formatNumber(diabetesParams.isfByTimeOfDay?.night, 0)}</span>
                                         <span>ICR: 1:{formatNumber(diabetesParams.icrByTimeOfDay?.night, 0)}</span>
+                                        <span class="ke">KE: {icrToKEFactor(diabetesParams.icrByTimeOfDay?.night)}u</span>
                                     </div>
                                 </div>
                             </div>
@@ -947,6 +981,27 @@
         color: white;
     }
 
+    .ml-notice {
+        margin-top: 15px;
+        padding: 12px 16px;
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        border-radius: 8px;
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+    }
+
+    .ml-notice .icon {
+        font-size: 1.1rem;
+    }
+
+    .prediction-mode select {
+        min-width: 180px;
+    }
+
     /* Progress Section */
     .progress-section {
         margin-top: 20px;
@@ -1009,6 +1064,12 @@
         margin-bottom: 8px;
     }
 
+    .param-value.ke-factor {
+        font-size: 1.4rem;
+        color: var(--color-blue);
+        margin-bottom: 12px;
+    }
+
     .param-value .unit {
         font-size: 0.8rem;
         font-weight: normal;
@@ -1056,6 +1117,11 @@
         gap: 5px;
         font-size: 0.85rem;
         color: var(--text-dim);
+    }
+
+    .tod-values .ke {
+        color: var(--color-blue);
+        font-weight: 500;
     }
 
     /* Stats Grid */

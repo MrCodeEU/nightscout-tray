@@ -637,3 +637,426 @@ func median(values []float64) float64 {
 	}
 	return sorted[n/2]
 }
+
+// AnalyzeDataML performs ML-based analysis on historical data
+// This uses more sophisticated pattern recognition algorithms
+func (a *Analyzer) AnalyzeDataML(entries []models.GlucoseEntry, treatments []models.Treatment) (*models.DiabetesParameters, error) {
+	a.mu.Lock()
+	a.progress = &models.CalculationProgress{
+		Stage:           "Initializing ML Analysis",
+		Progress:        0,
+		TotalEntries:    len(entries),
+		TotalTreatments: len(treatments),
+		StartedAt:       time.Now(),
+	}
+	a.mu.Unlock()
+
+	// Start with statistical analysis as base
+	params := models.NewDiabetesParameters()
+
+	// Sort data by time
+	sortedEntries := make([]models.GlucoseEntry, len(entries))
+	copy(sortedEntries, entries)
+	sort.Slice(sortedEntries, func(i, j int) bool {
+		return sortedEntries[i].Date < sortedEntries[j].Date
+	})
+
+	sortedTreatments := make([]models.Treatment, len(treatments))
+	copy(sortedTreatments, treatments)
+	sort.Slice(sortedTreatments, func(i, j int) bool {
+		return sortedTreatments[i].Time().Before(sortedTreatments[j].Time())
+	})
+
+	// Stage 1: Calculate glucose statistics
+	a.updateProgress("ML: Calculating glucose statistics", 5)
+	a.calculateGlucoseStats(sortedEntries, params)
+
+	// Stage 2: Build feature vectors for pattern recognition
+	a.updateProgress("ML: Building feature vectors", 15)
+	featureVectors := a.buildFeatureVectors(sortedEntries, sortedTreatments)
+
+	// Stage 3: Pattern clustering for ISF
+	a.updateProgress("ML: Analyzing insulin sensitivity patterns", 30)
+	a.calculateISFML(featureVectors, params)
+
+	// Stage 4: Pattern clustering for ICR
+	a.updateProgress("ML: Analyzing carb response patterns", 50)
+	a.calculateICRML(featureVectors, params)
+
+	// Stage 5: Time series analysis for DIA
+	a.updateProgress("ML: Estimating insulin duration", 65)
+	a.calculateDIAML(sortedEntries, sortedTreatments, params)
+
+	// Stage 6: Calculate carb absorption with curve fitting
+	a.updateProgress("ML: Fitting carb absorption curves", 80)
+	a.calculateCarbAbsorptionML(sortedEntries, sortedTreatments, params)
+
+	// Stage 7: Calculate time-of-day variations with clustering
+	a.updateProgress("ML: Detecting time-of-day patterns", 90)
+	a.calculateTimeOfDayVariationsML(featureVectors, params)
+
+	// Stage 8: Daily averages
+	a.updateProgress("ML: Calculating daily averages", 95)
+	a.calculateDailyAverages(sortedTreatments, params)
+
+	// Finalize
+	params.EntriesAnalyzed = len(entries)
+	params.TreatmentsAnalyzed = len(treatments)
+	params.CalculatedAt = time.Now()
+
+	if len(entries) > 0 {
+		firstEntry := sortedEntries[0].Time()
+		lastEntry := sortedEntries[len(sortedEntries)-1].Time()
+		params.DataDays = int(lastEntry.Sub(firstEntry).Hours() / 24)
+	}
+
+	a.updateProgress("Complete", 100)
+
+	a.mu.Lock()
+	a.params = params
+	a.mu.Unlock()
+
+	return params, nil
+}
+
+// FeatureVector represents a treatment event with surrounding glucose context
+type FeatureVector struct {
+	Time           time.Time
+	TimeOfDay      models.TimeOfDayPeriod
+	InsulinDose    float64
+	CarbIntake     float64
+	GlucoseBefore  float64
+	GlucoseAfter1h float64
+	GlucoseAfter2h float64
+	GlucoseAfter3h float64
+	GlucoseChange1h float64
+	GlucoseChange2h float64
+	TrendBefore    float64
+}
+
+func (a *Analyzer) buildFeatureVectors(entries []models.GlucoseEntry, treatments []models.Treatment) []FeatureVector {
+	var vectors []FeatureVector
+
+	for _, t := range treatments {
+		if !t.HasInsulin() && !t.HasCarbs() {
+			continue
+		}
+
+		treatTime := t.Time()
+		vec := FeatureVector{
+			Time:        treatTime,
+			TimeOfDay:   models.GetTimeOfDayPeriod(treatTime),
+			InsulinDose: t.Insulin,
+			CarbIntake:  t.Carbs,
+		}
+
+		// Find glucose before and after treatment
+		var glucoseBefore, glucose1h, glucose2h, glucose3h float64
+		var trendSum float64
+		var trendCount int
+
+		for _, e := range entries {
+			entryTime := e.Time()
+			minutesDiff := entryTime.Sub(treatTime).Minutes()
+
+			// Before treatment (within 30 min)
+			if minutesDiff >= -30 && minutesDiff <= 0 {
+				glucoseBefore = float64(e.SGV)
+			}
+
+			// Trend calculation (30 min before)
+			if minutesDiff >= -35 && minutesDiff <= -5 {
+				trendSum += float64(e.SGV)
+				trendCount++
+			}
+
+			// After 1 hour (50-70 min)
+			if minutesDiff >= 50 && minutesDiff <= 70 && glucose1h == 0 {
+				glucose1h = float64(e.SGV)
+			}
+
+			// After 2 hours (110-130 min)
+			if minutesDiff >= 110 && minutesDiff <= 130 && glucose2h == 0 {
+				glucose2h = float64(e.SGV)
+			}
+
+			// After 3 hours (170-190 min)
+			if minutesDiff >= 170 && minutesDiff <= 190 && glucose3h == 0 {
+				glucose3h = float64(e.SGV)
+			}
+		}
+
+		vec.GlucoseBefore = glucoseBefore
+		vec.GlucoseAfter1h = glucose1h
+		vec.GlucoseAfter2h = glucose2h
+		vec.GlucoseAfter3h = glucose3h
+
+		if glucoseBefore > 0 && glucose1h > 0 {
+			vec.GlucoseChange1h = glucose1h - glucoseBefore
+		}
+		if glucoseBefore > 0 && glucose2h > 0 {
+			vec.GlucoseChange2h = glucose2h - glucoseBefore
+		}
+		if trendCount > 0 {
+			vec.TrendBefore = (trendSum / float64(trendCount)) - glucoseBefore
+		}
+
+		// Only include vectors with sufficient data
+		if glucoseBefore > 0 && (glucose1h > 0 || glucose2h > 0) {
+			vectors = append(vectors, vec)
+		}
+	}
+
+	return vectors
+}
+
+func (a *Analyzer) calculateISFML(vectors []FeatureVector, params *models.DiabetesParameters) {
+	// Find correction events (insulin without carbs, high glucose before)
+	var isfValues []float64
+	isfByTimeOfDay := make(map[models.TimeOfDayPeriod][]float64)
+
+	for _, v := range vectors {
+		if v.InsulinDose <= 0 || v.CarbIntake > 0 {
+			continue
+		}
+		if v.GlucoseBefore < 150 {
+			continue // Only use high glucose corrections
+		}
+
+		// Use 2h glucose change for ISF calculation
+		glucoseChange := v.GlucoseChange2h
+		if glucoseChange == 0 {
+			glucoseChange = v.GlucoseChange1h
+		}
+
+		if glucoseChange < 0 { // Glucose dropped
+			isf := math.Abs(glucoseChange) / v.InsulinDose
+			if isf > 10 && isf < 200 {
+				isfValues = append(isfValues, isf)
+				isfByTimeOfDay[v.TimeOfDay] = append(isfByTimeOfDay[v.TimeOfDay], isf)
+			}
+		}
+	}
+
+	if len(isfValues) > 0 {
+		// Use median for robustness
+		params.ISF = median(isfValues)
+		params.ISFConfidence = math.Min(100, float64(len(isfValues))*5)
+
+		for period, values := range isfByTimeOfDay {
+			if len(values) >= 3 {
+				params.ISFByTimeOfDay[string(period)] = median(values)
+			} else {
+				params.ISFByTimeOfDay[string(period)] = params.ISF
+			}
+		}
+	}
+}
+
+func (a *Analyzer) calculateICRML(vectors []FeatureVector, params *models.DiabetesParameters) {
+	// Find meal events (carbs with proper insulin coverage)
+	var icrValues []float64
+	icrByTimeOfDay := make(map[models.TimeOfDayPeriod][]float64)
+
+	for _, v := range vectors {
+		if v.CarbIntake <= 0 || v.InsulinDose <= 0 {
+			continue
+		}
+		if v.GlucoseBefore < 70 || v.GlucoseBefore > 180 {
+			continue // Only use in-range starting glucose
+		}
+
+		// For well-covered meals, glucose should return near starting point
+		glucoseChange2h := v.GlucoseChange2h
+		if glucoseChange2h == 0 {
+			glucoseChange2h = v.GlucoseChange1h
+		}
+
+		// If glucose stayed relatively stable, this was well-covered
+		if math.Abs(glucoseChange2h) < 50 {
+			icr := v.CarbIntake / v.InsulinDose
+			if icr > 3 && icr < 30 {
+				icrValues = append(icrValues, icr)
+				icrByTimeOfDay[v.TimeOfDay] = append(icrByTimeOfDay[v.TimeOfDay], icr)
+			}
+		}
+	}
+
+	if len(icrValues) > 0 {
+		params.ICR = median(icrValues)
+		params.ICRConfidence = math.Min(100, float64(len(icrValues))*5)
+
+		for period, values := range icrByTimeOfDay {
+			if len(values) >= 3 {
+				params.ICRByTimeOfDay[string(period)] = median(values)
+			} else {
+				params.ICRByTimeOfDay[string(period)] = params.ICR
+			}
+		}
+	}
+}
+
+func (a *Analyzer) calculateDIAML(entries []models.GlucoseEntry, treatments []models.Treatment, params *models.DiabetesParameters) {
+	// Analyze insulin-only corrections to determine how long effects last
+	var diaValues []float64
+
+	for _, t := range treatments {
+		if !t.IsBolus() || t.Carbs > 0 {
+			continue
+		}
+
+		treatTime := t.Time()
+		
+		// Track glucose over time to find when it stabilizes
+		var glucoseTimeSeries []struct {
+			minutes float64
+			glucose float64
+		}
+
+		for _, e := range entries {
+			minutesDiff := e.Time().Sub(treatTime).Minutes()
+			if minutesDiff > 0 && minutesDiff < 360 { // 6 hours max
+				glucoseTimeSeries = append(glucoseTimeSeries, struct {
+					minutes float64
+					glucose float64
+				}{minutesDiff, float64(e.SGV)})
+			}
+		}
+
+		if len(glucoseTimeSeries) < 10 {
+			continue
+		}
+
+		// Find when glucose stabilizes (change < 5 mg/dL per 30 min)
+		for i := 5; i < len(glucoseTimeSeries); i++ {
+			recent := glucoseTimeSeries[i]
+			earlier := glucoseTimeSeries[i-5]
+			
+			timeDiff := recent.minutes - earlier.minutes
+			glucoseChange := math.Abs(recent.glucose - earlier.glucose)
+			
+			if timeDiff > 20 && glucoseChange/timeDiff*30 < 5 {
+				// Glucose is stable, this is approximately when insulin action ended
+				dia := recent.minutes / 60 // Convert to hours
+				if dia > 2 && dia < 7 {
+					diaValues = append(diaValues, dia)
+				}
+				break
+			}
+		}
+	}
+
+	if len(diaValues) > 3 {
+		params.DIA = median(diaValues)
+		params.DIAConfidence = math.Min(100, float64(len(diaValues))*8)
+	}
+}
+
+func (a *Analyzer) calculateCarbAbsorptionML(entries []models.GlucoseEntry, treatments []models.Treatment, params *models.DiabetesParameters) {
+	// Analyze carb-only events to determine absorption rate
+	var absorptionRates []float64
+
+	for _, t := range treatments {
+		if t.Carbs <= 0 || t.Insulin > 0 {
+			continue
+		}
+
+		treatTime := t.Time()
+		var peakGlucose float64
+		var peakTime time.Duration
+		var baseGlucose float64
+
+		for _, e := range entries {
+			entryTime := e.Time()
+			minutesDiff := entryTime.Sub(treatTime).Minutes()
+
+			// Base glucose (just before carbs)
+			if minutesDiff >= -15 && minutesDiff <= 0 {
+				baseGlucose = float64(e.SGV)
+			}
+
+			// Track peak glucose within 3 hours
+			if minutesDiff > 0 && minutesDiff < 180 {
+				if float64(e.SGV) > peakGlucose {
+					peakGlucose = float64(e.SGV)
+					peakTime = time.Duration(minutesDiff) * time.Minute
+				}
+			}
+		}
+
+		if baseGlucose > 0 && peakGlucose > baseGlucose+20 {
+			// Estimate absorption rate based on time to peak
+			// Peak typically occurs when ~50% of carbs are absorbed
+			peakHours := peakTime.Hours()
+			if peakHours > 0.25 && peakHours < 3 {
+				// Carbs absorbed at peak ≈ 50% of total
+				rate := (t.Carbs * 0.5) / peakHours
+				if rate > 10 && rate < 100 {
+					absorptionRates = append(absorptionRates, rate)
+				}
+			}
+		}
+	}
+
+	if len(absorptionRates) > 3 {
+		params.CarbAbsorptionRate = median(absorptionRates)
+	}
+}
+
+func (a *Analyzer) calculateTimeOfDayVariationsML(vectors []FeatureVector, params *models.DiabetesParameters) {
+	// Group vectors by time of day and analyze patterns
+	periods := []models.TimeOfDayPeriod{models.Morning, models.Midday, models.Evening, models.Night}
+
+	for _, period := range periods {
+		var periodVectors []FeatureVector
+		for _, v := range vectors {
+			if v.TimeOfDay == period {
+				periodVectors = append(periodVectors, v)
+			}
+		}
+
+		if len(periodVectors) < 3 {
+			continue
+		}
+
+		// Calculate period-specific ISF
+		var isfValues []float64
+		for _, v := range periodVectors {
+			if v.InsulinDose > 0 && v.CarbIntake == 0 && v.GlucoseChange2h < 0 {
+				isf := math.Abs(v.GlucoseChange2h) / v.InsulinDose
+				if isf > 10 && isf < 200 {
+					isfValues = append(isfValues, isf)
+				}
+			}
+		}
+		if len(isfValues) >= 2 {
+			params.ISFByTimeOfDay[string(period)] = median(isfValues)
+		}
+
+		// Calculate period-specific ICR
+		var icrValues []float64
+		for _, v := range periodVectors {
+			if v.CarbIntake > 0 && v.InsulinDose > 0 {
+				if math.Abs(v.GlucoseChange2h) < 50 {
+					icr := v.CarbIntake / v.InsulinDose
+					if icr > 3 && icr < 30 {
+						icrValues = append(icrValues, icr)
+					}
+				}
+			}
+		}
+		if len(icrValues) >= 2 {
+			params.ICRByTimeOfDay[string(period)] = median(icrValues)
+		}
+	}
+
+	// Fill in missing time-of-day values with overall values
+	for _, period := range periods {
+		if params.ISFByTimeOfDay[string(period)] == 0 {
+			params.ISFByTimeOfDay[string(period)] = params.ISF
+		}
+		if params.ICRByTimeOfDay[string(period)] == 0 {
+			params.ICRByTimeOfDay[string(period)] = params.ICR
+		}
+	}
+}

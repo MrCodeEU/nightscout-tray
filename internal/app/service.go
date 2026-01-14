@@ -404,7 +404,8 @@ func (s *NightscoutService) GetPredictionParameters() *models.DiabetesParameters
 }
 
 // StartParameterCalculation begins calculating diabetes parameters from historical data
-func (s *NightscoutService) StartParameterCalculation(days int) error {
+// mode can be "statistical" or "ml"
+func (s *NightscoutService) StartParameterCalculation(days int, mode string) error {
 	s.mu.RLock()
 	predSvc := s.predService
 	s.mu.RUnlock()
@@ -413,7 +414,7 @@ func (s *NightscoutService) StartParameterCalculation(days int) error {
 		return fmt.Errorf("prediction service not initialized")
 	}
 
-	return predSvc.StartCalculation(days)
+	return predSvc.StartCalculation(days, mode)
 }
 
 // GetCalculationProgress returns the progress of the current parameter calculation

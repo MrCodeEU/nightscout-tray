@@ -177,15 +177,22 @@ func (c *Client) GetEntries(from, to time.Time, count int) ([]models.GlucoseEntr
 }
 
 // GetEntriesHours retrieves glucose entries for the last N hours
+// Note: We request a larger count to ensure all entries are returned
 func (c *Client) GetEntriesHours(hours int) ([]models.GlucoseEntry, error) {
 	from := time.Now().Add(-time.Duration(hours) * time.Hour)
-	return c.GetEntries(from, time.Time{}, 0)
+	// ~12 readings per hour with 5-minute intervals + buffer
+	count := hours * 15
+	return c.GetEntries(from, time.Time{}, count)
 }
 
 // GetEntriesDays retrieves glucose entries for the last N days
+// Note: We request a large count because Nightscout has a default limit
+// (~288 readings per day with 5-minute intervals)
 func (c *Client) GetEntriesDays(days int) ([]models.GlucoseEntry, error) {
 	from := time.Now().AddDate(0, 0, -days)
-	return c.GetEntries(from, time.Time{}, 0)
+	// Calculate expected count: 288 readings/day * days + buffer
+	count := days * 300
+	return c.GetEntries(from, time.Time{}, count)
 }
 
 // TestConnection tests if the connection to Nightscout works
@@ -252,13 +259,17 @@ func (c *Client) GetTreatments(from, to time.Time, count int) ([]models.Treatmen
 // GetTreatmentsDays retrieves treatments for the last N days
 func (c *Client) GetTreatmentsDays(days int) ([]models.Treatment, error) {
 	from := time.Now().AddDate(0, 0, -days)
-	return c.GetTreatments(from, time.Time{}, 0)
+	// Request a large count to ensure we get all treatments
+	count := days * 50 // Estimate ~50 treatments per day max
+	return c.GetTreatments(from, time.Time{}, count)
 }
 
 // GetTreatmentsHours retrieves treatments for the last N hours
 func (c *Client) GetTreatmentsHours(hours int) ([]models.Treatment, error) {
 	from := time.Now().Add(-time.Duration(hours) * time.Hour)
-	return c.GetTreatments(from, time.Time{}, 0)
+	// Estimate ~5 treatments per hour max
+	count := hours * 10
+	return c.GetTreatments(from, time.Time{}, count)
 }
 
 // GetRecentTreatments retrieves the most recent N treatments

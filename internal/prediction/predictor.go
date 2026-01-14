@@ -394,20 +394,9 @@ func (p *Predictor) carbsAbsorbed(totalCarbs float64, minutes float64, absorptio
 
 // applyConstraints applies physiological constraints to predictions
 func (p *Predictor) applyConstraints(value float64, minutesOut float64) float64 {
-	// Glucose can't go negative
+	// Glucose can't go below a realistic minimum
 	if value < 20 {
 		value = 20
-	}
-
-	// Apply maximum rate of change constraint
-	// Glucose typically doesn't change more than ~4 mg/dL per minute sustained
-	maxChange := 4.0 * minutesOut
-	if math.Abs(value-p.params.AverageGlucose) > maxChange {
-		if value > p.params.AverageGlucose {
-			value = p.params.AverageGlucose + maxChange
-		} else {
-			value = p.params.AverageGlucose - maxChange
-		}
 	}
 
 	// Cap at realistic maximum

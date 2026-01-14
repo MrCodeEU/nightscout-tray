@@ -53,6 +53,10 @@ type Settings struct {
 	AutoStart      bool `json:"autoStart"`
 	ShowInTaskbar  bool `json:"showInTaskbar"` // Windows only
 
+	// Prediction settings
+	PredictionMode string `json:"predictionMode"` // "statistical" or "ml"
+	ShowKEFactor   bool   `json:"showKEFactor"`   // Show KE Factor instead of/alongside ICR
+
 	// Window state (not user-configurable)
 	WindowWidth  int `json:"windowWidth"`
 	WindowHeight int `json:"windowHeight"`
@@ -95,6 +99,9 @@ func DefaultSettings() *Settings {
 		StartMinimized: true,
 		AutoStart:      false,
 		ShowInTaskbar:  true,
+
+		PredictionMode: "statistical",
+		ShowKEFactor:   true,
 
 		WindowWidth:  900,
 		WindowHeight: 700,

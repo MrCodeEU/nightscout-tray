@@ -81,7 +81,8 @@ func (s *Service) IsCalculating() bool {
 }
 
 // StartCalculation begins parameter calculation with the given timeframe
-func (s *Service) StartCalculation(days int) error {
+// mode can be "statistical" or "ml"
+func (s *Service) StartCalculation(days int, mode string) error {
 	s.mu.Lock()
 	if s.isCalculating {
 		s.mu.Unlock()
@@ -91,7 +92,7 @@ func (s *Service) StartCalculation(days int) error {
 	s.calculationCancel = make(chan struct{})
 	s.mu.Unlock()
 
-	go s.runCalculation(days)
+	go s.runCalculation(days, mode)
 	return nil
 }
 
@@ -105,7 +106,7 @@ func (s *Service) CancelCalculation() {
 	}
 }
 
-func (s *Service) runCalculation(days int) {
+func (s *Service) runCalculation(days int, mode string) {
 	defer func() {
 		s.mu.Lock()
 		s.isCalculating = false
@@ -134,8 +135,16 @@ func (s *Service) runCalculation(days int) {
 		return
 	}
 
-	// Run analysis
-	params, err := s.analyzer.AnalyzeData(entries, treatments)
+	// Run analysis based on mode
+	var params *models.DiabetesParameters
+	if mode == "ml" {
+		// ML-based analysis (more computationally expensive)
+		params, err = s.analyzer.AnalyzeDataML(entries, treatments)
+	} else {
+		// Statistical analysis (default, faster)
+		params, err = s.analyzer.AnalyzeData(entries, treatments)
+	}
+	
 	if err != nil {
 		fmt.Printf("Error analyzing data: %v\n", err)
 		return
