@@ -7,12 +7,15 @@
 
     // Hash-based routing for the tray window
     let isTray = window.location.hash === '#/tray';
-    
-    // State
-    let status = null;
-    let settings = null;
-    let chartData = null;
-    let error = null;
+
+    // State - use 'any' for Wails-generated types to avoid class vs interface conflicts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let status: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let settings: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let chartData: any = null;
+    let error: string | null = null;
     let activeTab = 'dashboard';
     let saving = false;
 
@@ -29,27 +32,29 @@
         }
 
         // Listen for backend events
-        Events.On('glucose:update', (event) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        Events.On('glucose:update', (event: any) => {
             status = event.data;
             refreshChart();
         });
 
-        Events.On('glucose:error', (event) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        Events.On('glucose:error', (event: any) => {
             error = event.data;
         });
     });
 
-    async function refreshChart() {
+    async function refreshChart(): Promise<void> {
         if (settings) {
             try {
-                chartData = await NightscoutService.GetChartData(settings.chartTimeRange, 0);
+                chartData = await NightscoutService.GetChartData(settings.chartTimeRange || 4, 0);
             } catch (err) {
                 console.error("Chart refresh error:", err);
             }
         }
     }
 
-    async function saveSettings() {
+    async function saveSettings(): Promise<void> {
         saving = true;
         try {
             await NightscoutService.SaveSettings(settings);
@@ -63,7 +68,8 @@
     }
 
     // Helpers
-    const getStatusColor = (s) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const getStatusColor = (s: any): string => {
         if (!s) return 'var(--color-gray)';
         switch (s.status) {
             case 'urgent_low': case 'urgent_high': return 'var(--color-red)';
@@ -73,7 +79,8 @@
         }
     };
 
-    const formatTime = (date) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const formatTime = (date: any): string => {
         if (!date) return '--:--';
         return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
@@ -88,7 +95,7 @@
                 <div class="brand-icon">⚡</div>
                 <h1>Nightscout</h1>
             </div>
-            
+
             <nav>
                 <button class:active={activeTab === 'dashboard'} on:click={() => activeTab = 'dashboard'}>
                     <span class="icon">📊</span> Dashboard
@@ -499,7 +506,7 @@
         gap: 10px;
         cursor: pointer;
     }
-    
+
     .checkbox span { margin: 0; }
     .checkbox input { width: auto; }
 

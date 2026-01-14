@@ -4,26 +4,27 @@
     import { NightscoutService } from "../bindings/github.com/mrcode/nightscout-tray/internal/app";
     import Chart from './lib/Chart.svelte';
 
-    let status = null;
-    let settings = null;
-    let chartData = null;
+    // Use 'any' for Wails-generated types to avoid class vs interface conflicts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let status: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let settings: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let chartData: any = null;
     let loaded = false;
 
     onMount(async () => {
         try {
-            settings = await NightscoutService.GetSettings();
+            const loadedSettings = await NightscoutService.GetSettings();
             status = await NightscoutService.GetCurrentStatus();
 
-            if (settings) {
-                // Simplified chart for tray - no labels, minimal padding
-                const traySettings = {
-                    ...settings,
+            if (loadedSettings) {
+                settings = {
+                    ...loadedSettings,
                     chartShowTarget: true,
                     chartShowNow: false,
-                    // Use compact mode for tray
                     trayMode: true
                 };
-                settings = traySettings;
                 chartData = await NightscoutService.GetChartData(3, 0);
             }
             loaded = true;
@@ -31,15 +32,17 @@
             console.error(err);
         }
 
-        Events.On('glucose:update', (event) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        Events.On('glucose:update', (event: any) => {
             status = event.data;
             if (settings) {
-                NightscoutService.GetChartData(3, 0).then(data => chartData = data);
+                NightscoutService.GetChartData(3, 0).then((data) => chartData = data);
             }
         });
     });
 
-    const getStatusColor = (s) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const getStatusColor = (s: any): string => {
         if (!s) return '#64748b';
         switch (s.status) {
             case 'urgent_low': case 'urgent_high': return '#ef4444';
@@ -49,7 +52,8 @@
         }
     };
 
-    const getStatusText = (s) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const getStatusText = (s: any): string => {
         if (!s) return '';
         switch (s.status) {
             case 'urgent_low': return 'URGENT LOW';
@@ -60,12 +64,8 @@
         }
     };
 
-    const formatTime = (date) => {
-        if (!date) return '--:--';
-        return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    };
-
-    const getTimeSince = (date) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const getTimeSince = (date: any): string => {
         if (!date) return '';
         const mins = Math.floor((Date.now() - new Date(date).getTime()) / 60000);
         if (mins < 1) return 'just now';
@@ -100,7 +100,7 @@
         <!-- Chart takes up most of the space -->
         <div class="chart-container">
             {#if chartData}
-                <Chart data={chartData} settings={settings} />
+                <Chart data={chartData} {settings} />
             {:else}
                 <div class="chart-loading">Loading...</div>
             {/if}
