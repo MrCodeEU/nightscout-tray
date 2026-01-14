@@ -1,36 +1,8 @@
-# Build files
-/build
-/dist
-/node_modules
-/frontend/dist/
-/frontend/node_modules/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Test coverage
-coverage.out
-coverage.html
-
-# Binary
-nightscout-tray
-nightscout-tray.exe
-*.app
-*.dmg
-*.deb
-*.rpm
-*.AppImage
-
-# Logs
-*.log
-
-# Config (for development)
-settings.json
+.task
+bin
+frontend/dist
+frontend/node_modules
+build/linux/appimage/build
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
+.gemini/
+gha-creds-*.json

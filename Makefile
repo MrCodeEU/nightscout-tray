@@ -18,19 +18,19 @@ frontend:
 
 # Development mode
 dev:
-	wails dev
+	wails3 dev
 
 # Build for current platform
 build: frontend
-	wails build
+	wails3 build
 
 # Build for all platforms (requires cross-compilation setup)
 build-all: frontend
-	wails build -platform linux/amd64
-	wails build -platform linux/arm64
-	wails build -platform windows/amd64
-	wails build -platform darwin/amd64
-	wails build -platform darwin/arm64
+	wails3 build -platform linux/amd64
+	wails3 build -platform linux/arm64
+	wails3 build -platform windows/amd64
+	wails3 build -platform darwin/amd64
+	wails3 build -platform darwin/arm64
 
 # Run tests
 test:
