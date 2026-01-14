@@ -389,6 +389,27 @@ export class PredictionResult {
     "cobDuration": number;
 
     /**
+     * Time until predicted high threshold crossing (0 if not predicted or already high)
+     */
+    "highInMinutes": number;
+
+    /**
+     * Time until predicted low threshold crossing (0 if not predicted or already low)
+     */
+    "lowInMinutes": number;
+
+    /**
+     * Target thresholds used for high/low prediction
+     * mg/dL
+     */
+    "highThreshold": number;
+
+    /**
+     * mg/dL
+     */
+    "lowThreshold": number;
+
+    /**
      * Prediction metadata
      */
     "predictedAt": time$0.Time;
@@ -422,6 +443,18 @@ export class PredictionResult {
         }
         if (!("cobDuration" in $$source)) {
             this["cobDuration"] = 0;
+        }
+        if (!("highInMinutes" in $$source)) {
+            this["highInMinutes"] = 0;
+        }
+        if (!("lowInMinutes" in $$source)) {
+            this["lowInMinutes"] = 0;
+        }
+        if (!("highThreshold" in $$source)) {
+            this["highThreshold"] = 0;
+        }
+        if (!("lowThreshold" in $$source)) {
+            this["lowThreshold"] = 0;
         }
         if (!("predictedAt" in $$source)) {
             this["predictedAt"] = null;

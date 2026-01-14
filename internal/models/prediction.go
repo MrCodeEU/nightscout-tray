@@ -101,6 +101,16 @@ type PredictionResult struct {
 	// Predicted time until COB is absorbed
 	COBDuration float64 `json:"cobDuration"` // minutes
 
+	// Time until predicted high threshold crossing (0 if not predicted or already high)
+	HighInMinutes float64 `json:"highInMinutes"`
+	
+	// Time until predicted low threshold crossing (0 if not predicted or already low)
+	LowInMinutes float64 `json:"lowInMinutes"`
+	
+	// Target thresholds used for high/low prediction
+	HighThreshold float64 `json:"highThreshold"` // mg/dL
+	LowThreshold  float64 `json:"lowThreshold"`  // mg/dL
+
 	// Prediction metadata
 	PredictedAt     time.Time `json:"predictedAt"`
 	BasedOnGlucose  float64   `json:"basedOnGlucose"` // Current glucose value used

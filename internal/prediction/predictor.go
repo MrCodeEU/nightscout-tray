@@ -34,12 +34,26 @@ func (p *Predictor) Predict(
 	recentEntries []models.GlucoseEntry,
 	recentTreatments []models.Treatment,
 ) *models.PredictionResult {
+	return p.PredictWithThresholds(currentGlucose, currentTrend, recentEntries, recentTreatments, 180, 70)
+}
+
+// PredictWithThresholds generates glucose predictions with custom high/low thresholds
+func (p *Predictor) PredictWithThresholds(
+	currentGlucose float64,
+	currentTrend float64, // mg/dL per 5 minutes
+	recentEntries []models.GlucoseEntry,
+	recentTreatments []models.Treatment,
+	highThreshold float64,
+	lowThreshold float64,
+) *models.PredictionResult {
 	now := time.Now()
 
 	result := &models.PredictionResult{
 		PredictedAt:    now,
 		BasedOnGlucose: currentGlucose,
 		BasedOnTrend:   currentTrend,
+		HighThreshold:  highThreshold,
+		LowThreshold:   lowThreshold,
 	}
 
 	// Calculate IOB (Insulin on Board)
@@ -72,6 +86,15 @@ func (p *Predictor) Predict(
 		6*time.Hour,
 		15*time.Minute,
 		false, // lower confidence mode
+	)
+
+	// Calculate time until high/low thresholds are crossed
+	result.HighInMinutes, result.LowInMinutes = p.calculateTimeToThresholds(
+		currentGlucose,
+		result.ShortTerm,
+		result.LongTerm,
+		highThreshold,
+		lowThreshold,
 	)
 
 	return result
@@ -196,13 +219,10 @@ func (p *Predictor) calculateIOBDuration(treatments []models.Treatment, now time
 
 // calculateCOB calculates current Carbs on Board
 func (p *Predictor) calculateCOB(treatments []models.Treatment, now time.Time) float64 {
-	absorptionTime := p.params.TotalDailyCarbs / p.params.CarbAbsorptionRate * 60 // minutes for average meal
-	if absorptionTime < 120 {
-		absorptionTime = 120 // minimum 2 hours
-	}
-	if absorptionTime > 360 {
-		absorptionTime = 360 // maximum 6 hours
-	}
+	// Use carb absorption rate to determine absorption time per meal
+	// CarbAbsorptionRate is in grams per hour
+	// Average meal absorption time = average meal size / absorption rate
+	// Default to 3 hours (180 min) for standard absorption
 
 	var totalCOB float64
 
@@ -217,12 +237,26 @@ func (p *Predictor) calculateCOB(treatments []models.Treatment, now time.Time) f
 		}
 
 		minutesAgo := now.Sub(treatTime).Minutes()
-		if minutesAgo > absorptionTime {
+		
+		// Calculate absorption time for this specific meal based on carb amount
+		// More carbs = longer absorption time
+		absorptionMinutes := (t.Carbs / p.params.CarbAbsorptionRate) * 60
+		
+		// Enforce minimum and maximum absorption times
+		if absorptionMinutes < 90 {
+			absorptionMinutes = 90 // minimum 1.5 hours for any carbs
+		}
+		if absorptionMinutes > 300 {
+			absorptionMinutes = 300 // maximum 5 hours for large meals
+		}
+
+		if minutesAgo > absorptionMinutes {
 			continue
 		}
 
-		// Linear absorption model
-		absorbed := (minutesAgo / absorptionTime) * t.Carbs
+		// Use absorption curve model (not just linear)
+		// Peak absorption at ~45 min, then gradual decline
+		absorbed := p.carbsAbsorbed(t.Carbs, minutesAgo, absorptionMinutes)
 		remaining := t.Carbs - absorbed
 		if remaining > 0 {
 			totalCOB += remaining
@@ -453,6 +487,68 @@ func (p *Predictor) PredictWithScenario(
 	}
 
 	return p.Predict(currentGlucose, currentTrend, recentEntries, treatments)
+}
+
+// calculateTimeToThresholds calculates time until predicted high/low threshold crossings
+func (p *Predictor) calculateTimeToThresholds(
+	currentGlucose float64,
+	shortTerm []models.PredictedPoint,
+	longTerm []models.PredictedPoint,
+	highThreshold float64,
+	lowThreshold float64,
+) (highInMinutes, lowInMinutes float64) {
+	now := time.Now().UnixMilli()
+	
+	// Combine predictions for analysis (short-term first, then long-term)
+	allPoints := append(shortTerm, longTerm...)
+	
+	// Only calculate if not already past threshold
+	isCurrentlyHigh := currentGlucose >= highThreshold
+	isCurrentlyLow := currentGlucose <= lowThreshold
+	
+	var foundHigh, foundLow bool
+	var prevPoint models.PredictedPoint
+	prevPoint.Value = currentGlucose
+	prevPoint.Time = now
+	
+	for _, point := range allPoints {
+		minutesOut := float64(point.Time-now) / 60000.0
+		
+		// Check for high threshold crossing (rising into high)
+		if !isCurrentlyHigh && !foundHigh && point.Value >= highThreshold && prevPoint.Value < highThreshold {
+			// Interpolate to find exact crossing time
+			if point.Value != prevPoint.Value {
+				fraction := (highThreshold - prevPoint.Value) / (point.Value - prevPoint.Value)
+				prevMinutes := float64(prevPoint.Time-now) / 60000.0
+				highInMinutes = prevMinutes + fraction*(minutesOut-prevMinutes)
+			} else {
+				highInMinutes = minutesOut
+			}
+			foundHigh = true
+		}
+		
+		// Check for low threshold crossing (falling into low)
+		if !isCurrentlyLow && !foundLow && point.Value <= lowThreshold && prevPoint.Value > lowThreshold {
+			// Interpolate to find exact crossing time
+			if point.Value != prevPoint.Value {
+				fraction := (lowThreshold - prevPoint.Value) / (point.Value - prevPoint.Value)
+				prevMinutes := float64(prevPoint.Time-now) / 60000.0
+				lowInMinutes = prevMinutes + fraction*(minutesOut-prevMinutes)
+			} else {
+				lowInMinutes = minutesOut
+			}
+			foundLow = true
+		}
+		
+		prevPoint = point
+		
+		// Exit early if both found
+		if foundHigh && foundLow {
+			break
+		}
+	}
+	
+	return highInMinutes, lowInMinutes
 }
 
 // CalculateTrend calculates the current glucose trend from recent entries

@@ -261,12 +261,20 @@
 
         const convert = (v: number): number => isMMol ? v / 18.0182 : v;
 
+        // Short-term color: Cyan (#06b6d4) - bright and distinct from glucose data
+        const shortTermColor = '#06b6d4';
+        const shortTermBg = 'rgba(6, 182, 212, 0.2)';
+        
+        // Long-term color: Pink/Magenta (#ec4899) - distinct from short-term
+        const longTermColor = '#ec4899';
+        const longTermBg = 'rgba(236, 72, 153, 0.12)';
+
         // Draw short-term predictions (solid, more visible)
         if (predictionData.shortTerm && predictionData.shortTerm.length > 0) {
             const shortTerm = predictionData.shortTerm;
             
             // Draw confidence band
-            c.fillStyle = 'rgba(59, 130, 246, 0.15)';
+            c.fillStyle = shortTermBg;
             c.beginPath();
             
             // Top edge
@@ -292,8 +300,8 @@
             c.fill();
 
             // Draw prediction line
-            c.strokeStyle = '#3b82f6';
-            c.lineWidth = 2;
+            c.strokeStyle = shortTermColor;
+            c.lineWidth = 2.5;
             c.setLineDash([]);
             c.beginPath();
             
@@ -319,7 +327,7 @@
                 const y = scaleY(convert(p.value));
                 c.beginPath();
                 c.arc(x, y, pointRadius, 0, Math.PI * 2);
-                c.fillStyle = '#3b82f6';
+                c.fillStyle = shortTermColor;
                 c.fill();
             });
         }
@@ -329,7 +337,7 @@
             const longTerm = predictionData.longTerm;
             
             // Draw wider confidence band for long-term
-            c.fillStyle = 'rgba(147, 51, 234, 0.1)';
+            c.fillStyle = longTermBg;
             c.beginPath();
             
             for (let i = 0; i < longTerm.length; i++) {
@@ -353,9 +361,9 @@
             c.fill();
 
             // Draw dashed prediction line
-            c.strokeStyle = '#9333ea';
-            c.lineWidth = 1.5;
-            c.setLineDash([5, 5]);
+            c.strokeStyle = longTermColor;
+            c.lineWidth = 2;
+            c.setLineDash([6, 4]);
             c.beginPath();
             
             // Start from end of short-term predictions if available
@@ -381,7 +389,7 @@
                 const y = scaleY(convert(p.value));
                 c.beginPath();
                 c.arc(x, y, pointRadius, 0, Math.PI * 2);
-                c.fillStyle = '#9333ea';
+                c.fillStyle = longTermColor;
                 c.fill();
             });
         }

@@ -366,9 +366,11 @@ func (s *Service) GetChartPredictionData(showLongTerm bool) (*ChartPredictionDat
 	}
 
 	data := &ChartPredictionData{
-		ShortTerm: make([]ChartPredictionPoint, len(prediction.ShortTerm)),
-		IOB:       prediction.IOB,
-		COB:       prediction.COB,
+		ShortTerm:     make([]ChartPredictionPoint, len(prediction.ShortTerm)),
+		IOB:           prediction.IOB,
+		COB:           prediction.COB,
+		HighInMinutes: prediction.HighInMinutes,
+		LowInMinutes:  prediction.LowInMinutes,
 	}
 
 	for i, p := range prediction.ShortTerm {
@@ -395,10 +397,12 @@ func (s *Service) GetChartPredictionData(showLongTerm bool) (*ChartPredictionDat
 
 // ChartPredictionData contains prediction data for chart display
 type ChartPredictionData struct {
-	ShortTerm []ChartPredictionPoint `json:"shortTerm"`
-	LongTerm  []ChartPredictionPoint `json:"longTerm,omitempty"`
-	IOB       float64                `json:"iob"`
-	COB       float64                `json:"cob"`
+	ShortTerm     []ChartPredictionPoint `json:"shortTerm"`
+	LongTerm      []ChartPredictionPoint `json:"longTerm,omitempty"`
+	IOB           float64                `json:"iob"`
+	COB           float64                `json:"cob"`
+	HighInMinutes float64                `json:"highInMinutes"`
+	LowInMinutes  float64                `json:"lowInMinutes"`
 }
 
 // ChartPredictionPoint represents a prediction point for the chart

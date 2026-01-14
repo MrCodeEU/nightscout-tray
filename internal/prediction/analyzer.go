@@ -651,8 +651,19 @@ func (a *Analyzer) AnalyzeDataML(entries []models.GlucoseEntry, treatments []mod
 	}
 	a.mu.Unlock()
 
-	// Start with statistical analysis as base
-	params := models.NewDiabetesParameters()
+	// First run statistical analysis as baseline (ML will refine these values)
+	a.updateProgress("ML: Running statistical baseline", 2)
+	params, err := a.AnalyzeData(entries, treatments)
+	if err != nil {
+		// If statistical fails, start with defaults
+		params = models.NewDiabetesParameters()
+	}
+	
+	// Store statistical values as baseline (ML will only override if it finds better data)
+	statisticalISF := params.ISF
+	statisticalICR := params.ICR
+	statisticalDIA := params.DIA
+	statisticalCarbRate := params.CarbAbsorptionRate
 
 	// Sort data by time
 	sortedEntries := make([]models.GlucoseEntry, len(entries))
@@ -698,6 +709,26 @@ func (a *Analyzer) AnalyzeDataML(entries []models.GlucoseEntry, treatments []mod
 	// Stage 8: Daily averages
 	a.updateProgress("ML: Calculating daily averages", 95)
 	a.calculateDailyAverages(sortedTreatments, params)
+
+	// Stage 9: Validate and fallback to statistical if ML didn't find enough data
+	a.updateProgress("ML: Validating results", 98)
+	
+	// If ML ISF is still at default (50), use statistical value
+	if params.ISF == 50 && statisticalISF != 50 {
+		params.ISF = statisticalISF
+	}
+	// If ML ICR is still at default (10), use statistical value  
+	if params.ICR == 10 && statisticalICR != 10 {
+		params.ICR = statisticalICR
+	}
+	// If ML DIA is still at default (4), use statistical value
+	if params.DIA == 4.0 && statisticalDIA != 4.0 {
+		params.DIA = statisticalDIA
+	}
+	// If ML CarbAbsorptionRate is still at default (30), use statistical value
+	if params.CarbAbsorptionRate == 30 && statisticalCarbRate != 30 {
+		params.CarbAbsorptionRate = statisticalCarbRate
+	}
 
 	// Finalize
 	params.EntriesAnalyzed = len(entries)

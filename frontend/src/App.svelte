@@ -159,6 +159,17 @@
         return n.toFixed(decimals);
     };
 
+    // Format minutes to human-readable time (e.g., "1h 30m" or "45m")
+    const formatMinutes = (minutes: number | undefined): string => {
+        if (minutes === undefined || minutes === null || minutes <= 0) return '--';
+        const hours = Math.floor(minutes / 60);
+        const mins = Math.round(minutes % 60);
+        if (hours > 0) {
+            return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+        }
+        return `${mins}m`;
+    };
+
     // Convert ICR to KE Factor (units of insulin per 10g carbs / 1 KE)
     const icrToKEFactor = (icr: number | undefined): string => {
         if (icr === undefined || icr === null || icr === 0) return '--';
@@ -210,6 +221,16 @@
                                 <span class="iob" title="Insulin on Board">💉 IOB: {formatNumber(predictionData.iob, 2)}u</span>
                                 <span class="cob" title="Carbs on Board">🍞 COB: {formatNumber(predictionData.cob, 0)}g</span>
                             </div>
+                            {#if predictionData.highInMinutes > 0 || predictionData.lowInMinutes > 0}
+                                <div class="high-low-in">
+                                    {#if predictionData.lowInMinutes > 0}
+                                        <span class="low-in" title="Predicted low in">⬇️ Low in: {formatMinutes(predictionData.lowInMinutes)}</span>
+                                    {/if}
+                                    {#if predictionData.highInMinutes > 0}
+                                        <span class="high-in" title="Predicted high in">⬆️ High in: {formatMinutes(predictionData.highInMinutes)}</span>
+                                    {/if}
+                                </div>
+                            {/if}
                         {/if}
                     </div>
 
@@ -888,6 +909,32 @@
         background: rgba(59, 130, 246, 0.1);
         border-radius: 6px;
         border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    /* High-in/Low-in Display */
+    .high-low-in {
+        display: flex;
+        gap: 15px;
+        margin-top: 10px;
+        font-size: 0.85rem;
+    }
+
+    .high-low-in .low-in {
+        padding: 4px 10px;
+        background: rgba(239, 68, 68, 0.15);
+        border-radius: 6px;
+        border: 1px solid rgba(239, 68, 68, 0.4);
+        color: #ef4444;
+        font-weight: 500;
+    }
+
+    .high-low-in .high-in {
+        padding: 4px 10px;
+        background: rgba(250, 204, 21, 0.15);
+        border-radius: 6px;
+        border: 1px solid rgba(250, 204, 21, 0.4);
+        color: #facc15;
+        font-weight: 500;
     }
 
     /* Chart Controls */

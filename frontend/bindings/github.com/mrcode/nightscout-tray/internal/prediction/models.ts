@@ -13,6 +13,8 @@ export class ChartPredictionData {
     "longTerm"?: ChartPredictionPoint[];
     "iob": number;
     "cob": number;
+    "highInMinutes": number;
+    "lowInMinutes": number;
 
     /** Creates a new ChartPredictionData instance. */
     constructor($$source: Partial<ChartPredictionData> = {}) {
@@ -24,6 +26,12 @@ export class ChartPredictionData {
         }
         if (!("cob" in $$source)) {
             this["cob"] = 0;
+        }
+        if (!("highInMinutes" in $$source)) {
+            this["highInMinutes"] = 0;
+        }
+        if (!("lowInMinutes" in $$source)) {
+            this["lowInMinutes"] = 0;
         }
 
         Object.assign(this, $$source);
