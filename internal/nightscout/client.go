@@ -216,3 +216,104 @@ func (c *Client) GetRecentEntries(count int) ([]models.GlucoseEntry, error) {
 
 	return entries, nil
 }
+
+// GetTreatments retrieves treatment entries for a time range
+func (c *Client) GetTreatments(from, to time.Time, count int) ([]models.Treatment, error) {
+	params := url.Values{}
+
+	if !from.IsZero() {
+		params.Set("find[created_at][$gte]", from.Format(time.RFC3339))
+	}
+	if !to.IsZero() {
+		params.Set("find[created_at][$lte]", to.Format(time.RFC3339))
+	}
+	if count > 0 {
+		params.Set("count", fmt.Sprintf("%d", count))
+	}
+
+	req, err := c.buildRequest("GET", "/api/v1/treatments", params)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	var treatments []models.Treatment
+	if err := json.Unmarshal(body, &treatments); err != nil {
+		return nil, fmt.Errorf("parsing treatments: %w", err)
+	}
+
+	return treatments, nil
+}
+
+// GetTreatmentsDays retrieves treatments for the last N days
+func (c *Client) GetTreatmentsDays(days int) ([]models.Treatment, error) {
+	from := time.Now().AddDate(0, 0, -days)
+	return c.GetTreatments(from, time.Time{}, 0)
+}
+
+// GetTreatmentsHours retrieves treatments for the last N hours
+func (c *Client) GetTreatmentsHours(hours int) ([]models.Treatment, error) {
+	from := time.Now().Add(-time.Duration(hours) * time.Hour)
+	return c.GetTreatments(from, time.Time{}, 0)
+}
+
+// GetRecentTreatments retrieves the most recent N treatments
+func (c *Client) GetRecentTreatments(count int) ([]models.Treatment, error) {
+	params := url.Values{}
+	params.Set("count", fmt.Sprintf("%d", count))
+
+	req, err := c.buildRequest("GET", "/api/v1/treatments", params)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	var treatments []models.Treatment
+	if err := json.Unmarshal(body, &treatments); err != nil {
+		return nil, fmt.Errorf("parsing treatments: %w", err)
+	}
+
+	return treatments, nil
+}
+
+// GetInsulinTreatments retrieves only insulin-related treatments
+func (c *Client) GetInsulinTreatments(from, to time.Time) ([]models.Treatment, error) {
+	treatments, err := c.GetTreatments(from, to, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	var insulinTreatments []models.Treatment
+	for _, t := range treatments {
+		if t.HasInsulin() {
+			insulinTreatments = append(insulinTreatments, t)
+		}
+	}
+
+	return insulinTreatments, nil
+}
+
+// GetCarbTreatments retrieves only carb-related treatments
+func (c *Client) GetCarbTreatments(from, to time.Time) ([]models.Treatment, error) {
+	treatments, err := c.GetTreatments(from, to, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	var carbTreatments []models.Treatment
+	for _, t := range treatments {
+		if t.HasCarbs() {
+			carbTreatments = append(carbTreatments, t)
+		}
+	}
+
+	return carbTreatments, nil
+}

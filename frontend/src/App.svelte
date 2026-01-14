@@ -7,14 +7,27 @@
 
     // Hash-based routing for the tray window
     let isTray = window.location.hash === '#/tray';
-    
-    // State
-    let status = null;
-    let settings = null;
-    let chartData = null;
-    let error = null;
+
+    // State - use 'any' for Wails-generated types to avoid class vs interface conflicts
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let status: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let settings: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let chartData: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let predictionData: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let diabetesParams: any = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let calculationProgress: any = null;
+    let error: string | null = null;
     let activeTab = 'dashboard';
     let saving = false;
+    let showLongTermPrediction = false;
+    let isCalculating = false;
+    let calculationDays = 30;
+    let progressInterval: ReturnType<typeof setInterval> | null = null;
 
     // Load data on mount
     onMount(async () => {
@@ -23,33 +36,93 @@
         try {
             settings = await NightscoutService.GetSettings();
             status = await NightscoutService.GetCurrentStatus();
+            diabetesParams = await NightscoutService.GetPredictionParameters();
             await refreshChart();
+            await refreshPrediction();
         } catch (err) {
             error = "Failed to load initial data: " + err;
         }
 
         // Listen for backend events
-        Events.On('glucose:update', (event) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        Events.On('glucose:update', (event: any) => {
             status = event.data;
             refreshChart();
+            refreshPrediction();
         });
 
-        Events.On('glucose:error', (event) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        Events.On('glucose:error', (event: any) => {
             error = event.data;
         });
     });
 
-    async function refreshChart() {
+    async function refreshChart(): Promise<void> {
         if (settings) {
             try {
-                chartData = await NightscoutService.GetChartData(settings.chartTimeRange, 0);
+                chartData = await NightscoutService.GetChartData(settings.chartTimeRange || 4, 0);
             } catch (err) {
                 console.error("Chart refresh error:", err);
             }
         }
     }
 
-    async function saveSettings() {
+    async function refreshPrediction(): Promise<void> {
+        try {
+            predictionData = await NightscoutService.GetChartPredictionData(showLongTermPrediction);
+        } catch (err) {
+            console.error("Prediction refresh error:", err);
+        }
+    }
+
+    async function startCalculation(): Promise<void> {
+        isCalculating = true;
+        calculationProgress = { stage: 'Starting...', progress: 0 };
+        
+        try {
+            await NightscoutService.StartParameterCalculation(calculationDays);
+            
+            // Poll for progress
+            progressInterval = setInterval(async () => {
+                try {
+                    const stillCalc = await NightscoutService.IsCalculating();
+                    if (stillCalc) {
+                        calculationProgress = await NightscoutService.GetCalculationProgress();
+                    } else {
+                        // Calculation complete
+                        if (progressInterval) clearInterval(progressInterval);
+                        progressInterval = null;
+                        isCalculating = false;
+                        diabetesParams = await NightscoutService.GetPredictionParameters();
+                        await refreshPrediction();
+                    }
+                } catch (e) {
+                    console.error("Progress poll error:", e);
+                }
+            }, 500);
+        } catch (err) {
+            error = "Failed to start calculation: " + err;
+            isCalculating = false;
+        }
+    }
+
+    async function cancelCalculation(): Promise<void> {
+        try {
+            await NightscoutService.CancelCalculation();
+            if (progressInterval) clearInterval(progressInterval);
+            progressInterval = null;
+            isCalculating = false;
+        } catch (err) {
+            console.error("Cancel error:", err);
+        }
+    }
+
+    async function toggleLongTerm(): Promise<void> {
+        showLongTermPrediction = !showLongTermPrediction;
+        await refreshPrediction();
+    }
+
+    async function saveSettings(): Promise<void> {
         saving = true;
         try {
             await NightscoutService.SaveSettings(settings);
@@ -63,7 +136,8 @@
     }
 
     // Helpers
-    const getStatusColor = (s) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const getStatusColor = (s: any): string => {
         if (!s) return 'var(--color-gray)';
         switch (s.status) {
             case 'urgent_low': case 'urgent_high': return 'var(--color-red)';
@@ -73,9 +147,15 @@
         }
     };
 
-    const formatTime = (date) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const formatTime = (date: any): string => {
         if (!date) return '--:--';
         return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const formatNumber = (n: number | undefined, decimals: number = 1): string => {
+        if (n === undefined || n === null) return '--';
+        return n.toFixed(decimals);
     };
 </script>
 
@@ -88,10 +168,13 @@
                 <div class="brand-icon">⚡</div>
                 <h1>Nightscout</h1>
             </div>
-            
+
             <nav>
                 <button class:active={activeTab === 'dashboard'} on:click={() => activeTab = 'dashboard'}>
                     <span class="icon">📊</span> Dashboard
+                </button>
+                <button class:active={activeTab === 'predictions'} on:click={() => activeTab = 'predictions'}>
+                    <span class="icon">🔮</span> Predictions
                 </button>
                 <button class:active={activeTab === 'settings'} on:click={() => activeTab = 'settings'}>
                     <span class="icon">⚙️</span> Settings
@@ -115,15 +198,201 @@
                             <div class="time">Updated {status ? formatTime(status.time) : '--:--'}</div>
                             <div class="delta">{status && status.delta ? (status.delta > 0 ? '+' + status.delta : status.delta) : ''}</div>
                         </div>
+                        {#if predictionData}
+                            <div class="iob-cob">
+                                <span class="iob" title="Insulin on Board">💉 IOB: {formatNumber(predictionData.iob, 2)}u</span>
+                                <span class="cob" title="Carbs on Board">🍞 COB: {formatNumber(predictionData.cob, 0)}g</span>
+                            </div>
+                        {/if}
+                    </div>
+
+                    <div class="chart-controls">
+                        <label class="toggle">
+                            <input type="checkbox" bind:checked={showLongTermPrediction} on:change={toggleLongTerm} />
+                            <span>Show Long-term Predictions (6h)</span>
+                        </label>
                     </div>
 
                     <div class="chart-panel">
                         {#if chartData}
-                            <Chart data={chartData} {settings} />
+                            <Chart data={chartData} {settings} {predictionData} {showLongTermPrediction} />
                         {:else}
                             <div class="loading">Loading Chart...</div>
                         {/if}
                     </div>
+                </div>
+            {/if}
+
+            {#if activeTab === 'predictions'}
+                <div class="view predictions">
+                    <h2>AI Predictions & Diabetes Parameters</h2>
+                    
+                    <section class="calc-section">
+                        <h3>Calculate Parameters</h3>
+                        <p class="description">Analyze your historical data to calculate personalized diabetes parameters. This process learns from your glucose readings, insulin doses, and carb intake.</p>
+                        
+                        <div class="calc-controls">
+                            <label>
+                                <span>Analyze last</span>
+                                <select bind:value={calculationDays} disabled={isCalculating}>
+                                    <option value={7}>7 days</option>
+                                    <option value={14}>14 days</option>
+                                    <option value={30}>30 days</option>
+                                    <option value={60}>60 days</option>
+                                    <option value={90}>90 days</option>
+                                </select>
+                            </label>
+                            
+                            {#if !isCalculating}
+                                <button class="calc-btn" on:click={startCalculation}>
+                                    🧮 Calculate Parameters
+                                </button>
+                            {:else}
+                                <button class="cancel-btn" on:click={cancelCalculation}>
+                                    ❌ Cancel
+                                </button>
+                            {/if}
+                        </div>
+
+                        {#if isCalculating && calculationProgress}
+                            <div class="progress-section">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: {calculationProgress.progress}%"></div>
+                                </div>
+                                <div class="progress-info">
+                                    <span class="stage">{calculationProgress.stage}</span>
+                                    <span class="percent">{calculationProgress.progress?.toFixed(0)}%</span>
+                                    {#if calculationProgress.estimatedTimeRemaining > 0}
+                                        <span class="eta">~{Math.ceil(calculationProgress.estimatedTimeRemaining)}s remaining</span>
+                                    {/if}
+                                </div>
+                            </div>
+                        {/if}
+                    </section>
+
+                    {#if diabetesParams}
+                        <section class="params-section">
+                            <h3>Calculated Parameters</h3>
+                            <div class="params-grid">
+                                <div class="param-card">
+                                    <div class="param-label">Insulin Sensitivity Factor (ISF)</div>
+                                    <div class="param-value">{formatNumber(diabetesParams.isf, 0)} <span class="unit">mg/dL per unit</span></div>
+                                    <div class="param-desc">1 unit of insulin lowers your blood glucose by this amount</div>
+                                    <div class="confidence" style="--conf: {diabetesParams.isfConfidence}%">
+                                        Confidence: {formatNumber(diabetesParams.isfConfidence, 0)}%
+                                    </div>
+                                </div>
+
+                                <div class="param-card">
+                                    <div class="param-label">Insulin-to-Carb Ratio (ICR)</div>
+                                    <div class="param-value">1:{formatNumber(diabetesParams.icr, 0)} <span class="unit">unit per {formatNumber(diabetesParams.icr, 0)}g carbs</span></div>
+                                    <div class="param-desc">Grams of carbohydrates covered by 1 unit of insulin</div>
+                                    <div class="confidence" style="--conf: {diabetesParams.icrConfidence}%">
+                                        Confidence: {formatNumber(diabetesParams.icrConfidence, 0)}%
+                                    </div>
+                                </div>
+
+                                <div class="param-card">
+                                    <div class="param-label">Duration of Insulin Action (DIA)</div>
+                                    <div class="param-value">{formatNumber(diabetesParams.dia, 1)} <span class="unit">hours</span></div>
+                                    <div class="param-desc">How long insulin remains active in your body</div>
+                                    <div class="confidence" style="--conf: {diabetesParams.diaConfidence}%">
+                                        Confidence: {formatNumber(diabetesParams.diaConfidence, 0)}%
+                                    </div>
+                                </div>
+
+                                <div class="param-card">
+                                    <div class="param-label">Carb Absorption Rate</div>
+                                    <div class="param-value">{formatNumber(diabetesParams.carbAbsorptionRate, 0)} <span class="unit">g/hour</span></div>
+                                    <div class="param-desc">Average rate at which carbs are absorbed</div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="time-of-day-section">
+                            <h3>Time-of-Day Variations</h3>
+                            <div class="tod-grid">
+                                <div class="tod-card">
+                                    <div class="tod-label">🌅 Morning (6-11)</div>
+                                    <div class="tod-values">
+                                        <span>ISF: {formatNumber(diabetesParams.isfByTimeOfDay?.morning, 0)}</span>
+                                        <span>ICR: 1:{formatNumber(diabetesParams.icrByTimeOfDay?.morning, 0)}</span>
+                                    </div>
+                                </div>
+                                <div class="tod-card">
+                                    <div class="tod-label">☀️ Midday (11-17)</div>
+                                    <div class="tod-values">
+                                        <span>ISF: {formatNumber(diabetesParams.isfByTimeOfDay?.midday, 0)}</span>
+                                        <span>ICR: 1:{formatNumber(diabetesParams.icrByTimeOfDay?.midday, 0)}</span>
+                                    </div>
+                                </div>
+                                <div class="tod-card">
+                                    <div class="tod-label">🌆 Evening (17-22)</div>
+                                    <div class="tod-values">
+                                        <span>ISF: {formatNumber(diabetesParams.isfByTimeOfDay?.evening, 0)}</span>
+                                        <span>ICR: 1:{formatNumber(diabetesParams.icrByTimeOfDay?.evening, 0)}</span>
+                                    </div>
+                                </div>
+                                <div class="tod-card">
+                                    <div class="tod-label">🌙 Night (22-6)</div>
+                                    <div class="tod-values">
+                                        <span>ISF: {formatNumber(diabetesParams.isfByTimeOfDay?.night, 0)}</span>
+                                        <span>ICR: 1:{formatNumber(diabetesParams.icrByTimeOfDay?.night, 0)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="stats-section">
+                            <h3>Glucose Statistics</h3>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-label">Average Glucose</span>
+                                    <span class="stat-value">{formatNumber(diabetesParams.averageGlucose, 0)} mg/dL</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">GMI (est. A1C)</span>
+                                    <span class="stat-value">{formatNumber(diabetesParams.gmi, 1)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Time in Range</span>
+                                    <span class="stat-value tir">{formatNumber(diabetesParams.timeInRange, 0)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Time Below Range</span>
+                                    <span class="stat-value tbr">{formatNumber(diabetesParams.timeBelowRange, 1)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Time Above Range</span>
+                                    <span class="stat-value tar">{formatNumber(diabetesParams.timeAboveRange, 0)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Coefficient of Variation</span>
+                                    <span class="stat-value">{formatNumber(diabetesParams.coefficientOfVariation, 1)}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Daily Insulin (avg)</span>
+                                    <span class="stat-value">{formatNumber(diabetesParams.totalDailyInsulin, 1)} units</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Daily Carbs (avg)</span>
+                                    <span class="stat-value">{formatNumber(diabetesParams.totalDailyCarbs, 0)}g</span>
+                                </div>
+                            </div>
+                            
+                            <div class="data-info">
+                                <span>Based on {diabetesParams.dataDays} days of data</span>
+                                <span>•</span>
+                                <span>{diabetesParams.entriesAnalyzed} glucose readings</span>
+                                <span>•</span>
+                                <span>{diabetesParams.treatmentsAnalyzed} treatments</span>
+                            </div>
+                        </section>
+                    {:else}
+                        <section class="no-params">
+                            <p>No calculated parameters yet. Click "Calculate Parameters" to analyze your data.</p>
+                        </section>
+                    {/if}
                 </div>
             {/if}
 
@@ -499,7 +768,7 @@
         gap: 10px;
         cursor: pointer;
     }
-    
+
     .checkbox span { margin: 0; }
     .checkbox input { width: auto; }
 
@@ -569,5 +838,276 @@
         align-items: center;
         justify-content: center;
         color: var(--text-dim);
+    }
+
+    /* IOB/COB Display */
+    .iob-cob {
+        display: flex;
+        gap: 20px;
+        margin-top: 15px;
+        font-size: 0.9rem;
+        color: var(--text-dim);
+    }
+
+    .iob-cob span {
+        padding: 5px 10px;
+        background: rgba(59, 130, 246, 0.1);
+        border-radius: 6px;
+        border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    /* Chart Controls */
+    .chart-controls {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 10px;
+    }
+
+    .chart-controls .toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.85rem;
+        color: var(--text-dim);
+        cursor: pointer;
+    }
+
+    .chart-controls .toggle input {
+        width: auto;
+    }
+
+    /* Predictions Tab Styles */
+    .predictions {
+        padding: 20px;
+        overflow-y: auto;
+    }
+
+    .predictions h2 {
+        margin-bottom: 25px;
+    }
+
+    .predictions h3 {
+        color: var(--text-main);
+        margin-bottom: 15px;
+        font-size: 1.1rem;
+    }
+
+    .predictions section {
+        background: var(--bg-panel);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .description {
+        color: var(--text-dim);
+        margin-bottom: 20px;
+        line-height: 1.6;
+    }
+
+    /* Calculation Controls */
+    .calc-controls {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+
+    .calc-controls label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .calc-controls select {
+        width: auto;
+        padding: 8px 15px;
+    }
+
+    .calc-btn, .cancel-btn {
+        padding: 10px 25px;
+        border-radius: 8px;
+        border: none;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .calc-btn {
+        background: var(--color-blue);
+        color: white;
+    }
+
+    .calc-btn:hover {
+        background: #2563eb;
+    }
+
+    .cancel-btn {
+        background: var(--color-red);
+        color: white;
+    }
+
+    /* Progress Section */
+    .progress-section {
+        margin-top: 20px;
+    }
+
+    .progress-bar {
+        height: 8px;
+        background: var(--bg-input);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--color-blue), var(--color-green));
+        transition: width 0.3s ease;
+    }
+
+    .progress-info {
+        display: flex;
+        gap: 20px;
+        margin-top: 10px;
+        font-size: 0.9rem;
+        color: var(--text-dim);
+    }
+
+    .progress-info .stage {
+        color: var(--text-main);
+    }
+
+    .progress-info .percent {
+        color: var(--color-blue);
+        font-weight: bold;
+    }
+
+    /* Parameter Cards */
+    .params-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+    }
+
+    .param-card {
+        background: var(--bg-dark);
+        border-radius: 10px;
+        padding: 20px;
+        border: 1px solid #334155;
+    }
+
+    .param-label {
+        font-size: 0.85rem;
+        color: var(--text-dim);
+        margin-bottom: 8px;
+    }
+
+    .param-value {
+        font-size: 1.8rem;
+        font-weight: bold;
+        color: var(--color-green);
+        margin-bottom: 8px;
+    }
+
+    .param-value .unit {
+        font-size: 0.8rem;
+        font-weight: normal;
+        color: var(--text-dim);
+    }
+
+    .param-desc {
+        font-size: 0.8rem;
+        color: var(--text-dim);
+        margin-bottom: 12px;
+    }
+
+    .confidence {
+        font-size: 0.75rem;
+        color: var(--text-dim);
+        padding: 4px 8px;
+        background: rgba(74, 222, 128, calc(var(--conf) / 100 * 0.2));
+        border-radius: 4px;
+        display: inline-block;
+    }
+
+    /* Time of Day Grid */
+    .tod-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 15px;
+    }
+
+    .tod-card {
+        background: var(--bg-dark);
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+        border: 1px solid #334155;
+    }
+
+    .tod-label {
+        font-size: 0.9rem;
+        margin-bottom: 10px;
+    }
+
+    .tod-values {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        font-size: 0.85rem;
+        color: var(--text-dim);
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+
+    .stat-item {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        padding: 12px;
+        background: var(--bg-dark);
+        border-radius: 8px;
+    }
+
+    .stat-label {
+        font-size: 0.8rem;
+        color: var(--text-dim);
+    }
+
+    .stat-value {
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+
+    .stat-value.tir { color: var(--color-green); }
+    .stat-value.tbr { color: var(--color-red); }
+    .stat-value.tar { color: var(--color-yellow); }
+
+    .data-info {
+        display: flex;
+        gap: 10px;
+        font-size: 0.8rem;
+        color: var(--text-dim);
+        justify-content: center;
+        padding-top: 10px;
+        border-top: 1px solid #334155;
+    }
+
+    .no-params {
+        text-align: center;
+        color: var(--text-dim);
+        padding: 40px;
+    }
+
+    @media (max-width: 900px) {
+        .tod-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
     }
 </style>

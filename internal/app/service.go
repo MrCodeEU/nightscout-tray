@@ -10,6 +10,7 @@ import (
 	"github.com/mrcode/nightscout-tray/internal/models"
 	"github.com/mrcode/nightscout-tray/internal/nightscout"
 	"github.com/mrcode/nightscout-tray/internal/notifications"
+	"github.com/mrcode/nightscout-tray/internal/prediction"
 	"github.com/mrcode/nightscout-tray/internal/tray"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -20,6 +21,7 @@ type NightscoutService struct {
 	settings      *models.Settings
 	client        *nightscout.Client
 	notifyManager *notifications.Manager
+	predService   *prediction.Service
 
 	mu                sync.RWMutex
 	lastStatus        *models.GlucoseStatus
@@ -45,6 +47,7 @@ func NewNightscoutService() *NightscoutService {
 		notifyManager: notifications.NewManager(settings),
 		stopChan:      make(chan struct{}),
 		iconGen:       tray.NewIconGenerator(),
+		predService:   nil, // Initialized when client is ready
 	}
 }
 
@@ -59,6 +62,13 @@ func (s *NightscoutService) initClient() {
 		s.settings.APIToken,
 		s.settings.UseToken,
 	)
+
+	// Initialize prediction service with the new client
+	if s.predService == nil {
+		s.predService = prediction.NewService(s.client)
+	} else {
+		s.predService.SetClient(s.client)
+	}
 }
 
 func (s *NightscoutService) startUpdateLoop() {
@@ -363,4 +373,148 @@ func (s *NightscoutService) GetChartData(hours int, offsetHours int) (*models.Ch
 		TimeRangeH: hours,
 		Unit:       settings.Unit,
 	}, nil
+}
+
+// Prediction-related methods
+
+// GetPrediction returns glucose predictions based on current data
+func (s *NightscoutService) GetPrediction() (*models.PredictionResult, error) {
+	s.mu.RLock()
+	predSvc := s.predService
+	s.mu.RUnlock()
+
+	if predSvc == nil {
+		return nil, fmt.Errorf("prediction service not initialized")
+	}
+
+	return predSvc.GetPrediction()
+}
+
+// GetPredictionParameters returns the calculated diabetes parameters
+func (s *NightscoutService) GetPredictionParameters() *models.DiabetesParameters {
+	s.mu.RLock()
+	predSvc := s.predService
+	s.mu.RUnlock()
+
+	if predSvc == nil {
+		return models.NewDiabetesParameters()
+	}
+
+	return predSvc.GetParameters()
+}
+
+// StartParameterCalculation begins calculating diabetes parameters from historical data
+func (s *NightscoutService) StartParameterCalculation(days int) error {
+	s.mu.RLock()
+	predSvc := s.predService
+	s.mu.RUnlock()
+
+	if predSvc == nil {
+		return fmt.Errorf("prediction service not initialized")
+	}
+
+	return predSvc.StartCalculation(days)
+}
+
+// GetCalculationProgress returns the progress of the current parameter calculation
+func (s *NightscoutService) GetCalculationProgress() *models.CalculationProgress {
+	s.mu.RLock()
+	predSvc := s.predService
+	s.mu.RUnlock()
+
+	if predSvc == nil {
+		return &models.CalculationProgress{}
+	}
+
+	return predSvc.GetCalculationProgress()
+}
+
+// IsCalculating returns true if parameter calculation is in progress
+func (s *NightscoutService) IsCalculating() bool {
+	s.mu.RLock()
+	predSvc := s.predService
+	s.mu.RUnlock()
+
+	if predSvc == nil {
+		return false
+	}
+
+	return predSvc.IsCalculating()
+}
+
+// CancelCalculation cancels an in-progress parameter calculation
+func (s *NightscoutService) CancelCalculation() {
+	s.mu.RLock()
+	predSvc := s.predService
+	s.mu.RUnlock()
+
+	if predSvc != nil {
+		predSvc.CancelCalculation()
+	}
+}
+
+// GetPredictionWithScenario returns predictions with a hypothetical treatment
+func (s *NightscoutService) GetPredictionWithScenario(additionalInsulin, additionalCarbs float64) (*models.PredictionResult, error) {
+	s.mu.RLock()
+	predSvc := s.predService
+	s.mu.RUnlock()
+
+	if predSvc == nil {
+		return nil, fmt.Errorf("prediction service not initialized")
+	}
+
+	return predSvc.GetPredictionWithScenario(additionalInsulin, additionalCarbs)
+}
+
+// GetIOBCOB returns current Insulin on Board and Carbs on Board
+func (s *NightscoutService) GetIOBCOB() (*IOBCOBResult, error) {
+	s.mu.RLock()
+	predSvc := s.predService
+	s.mu.RUnlock()
+
+	if predSvc == nil {
+		return nil, fmt.Errorf("prediction service not initialized")
+	}
+
+	iob, cob, err := predSvc.GetIOBCOB()
+	if err != nil {
+		return nil, err
+	}
+
+	return &IOBCOBResult{
+		IOB: iob,
+		COB: cob,
+	}, nil
+}
+
+// IOBCOBResult contains IOB and COB values
+type IOBCOBResult struct {
+	IOB float64 `json:"iob"`
+	COB float64 `json:"cob"`
+}
+
+// GetChartPredictionData returns prediction data formatted for the chart
+func (s *NightscoutService) GetChartPredictionData(showLongTerm bool) (*prediction.ChartPredictionData, error) {
+	s.mu.RLock()
+	predSvc := s.predService
+	s.mu.RUnlock()
+
+	if predSvc == nil {
+		return nil, fmt.Errorf("prediction service not initialized")
+	}
+
+	return predSvc.GetChartPredictionData(showLongTerm)
+}
+
+// GetTreatments returns recent treatments
+func (s *NightscoutService) GetTreatments(hours int) ([]models.Treatment, error) {
+	s.mu.RLock()
+	predSvc := s.predService
+	s.mu.RUnlock()
+
+	if predSvc == nil {
+		return nil, fmt.Errorf("prediction service not initialized")
+	}
+
+	return predSvc.GetTreatments(hours)
 }

@@ -6,7 +6,9 @@
       "Bash(wails3 build:*)",
       "Bash(start bin/nightscout-tray.exe)",
       "Bash(wails3 generate syso:*)",
-      "Bash(go doc:*)"
+      "Bash(go doc:*)",
+      "Bash(npm run check:*)",
+      "Bash(npm ls:*)"
     ]
   }
 }
