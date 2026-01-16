@@ -22,13 +22,11 @@ linters:
   exclusions:
     paths:
       - "build/"
+      - "build/ios/"
+      - "build/darwin/"
+      - "build/android/"
 
 run:
   timeout: 5m
   build-tags:
     - linux
-  skip-dirs:
-    - build
-    - build/ios
-    - build/darwin
-    - build/android
