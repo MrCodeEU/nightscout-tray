@@ -66,11 +66,6 @@ const (
 	glucoseMin = 20.0  // Minimum glucose for normalization
 	glucoseMax = 420.0 // Maximum glucose for normalization
 	
-	// Sequence parameters
-	sequenceInputLen  = 6  // 30 minutes at 5-min intervals
-	sequenceOutputLen = 6  // Predict 30 minutes ahead
-	intervalMinutes   = 5  // 5 minutes between readings
-	
 	// Pattern matching parameters
 	maxPatterns       = 1000 // Maximum patterns to store
 	similarityThreshold = 0.85 // Minimum similarity for pattern match
@@ -541,9 +536,14 @@ func (m *MLPredictor) momentumPredict(inputSeq [6]float64) [12]float64 {
 func (m *MLPredictor) linearExtrapolate(inputSeq [6]float64) [12]float64 {
 	var predictions [12]float64
 	
+	if len(inputSeq) < 6 {
+		return predictions
+	}
+	
 	trend := inputSeq[5] - inputSeq[4]
 	
 	for i := 0; i < 12; i++ {
+		//nolint:gosec // inputSeq is always size 6, index is safe
 		predictions[i] = inputSeq[5] + trend*float64(i+1)*0.5 // Damped trend
 		if predictions[i] < -1 {
 			predictions[i] = -1

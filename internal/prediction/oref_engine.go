@@ -4,7 +4,6 @@
 package prediction
 
 import (
-	"fmt"
 	"math"
 	"sort"
 	"time"
@@ -270,7 +269,11 @@ func (e *OrefEngine) learnCircadianPatterns(entries []models.GlucoseEntry, treat
 	}
 
 	// Calculate hourly sensitivities relative to median
-	allISF := make([]float64, 0)
+	totalISF := 0
+	for _, values := range hourlyISF {
+		totalISF += len(values)
+	}
+	allISF := make([]float64, 0, totalISF)
 	for _, values := range hourlyISF {
 		allISF = append(allISF, values...)
 	}
@@ -286,7 +289,11 @@ func (e *OrefEngine) learnCircadianPatterns(entries []models.GlucoseEntry, treat
 		}
 	}
 
-	allICR := make([]float64, 0)
+	totalICR := 0
+	for _, values := range hourlyICR {
+		totalICR += len(values)
+	}
+	allICR := make([]float64, 0, totalICR)
 	for _, values := range hourlyICR {
 		allICR = append(allICR, values...)
 	}
@@ -1098,13 +1105,13 @@ func (e *OrefEngine) calculateThresholdTimes(
 	lowIn = -1
 
 	for i, p := range points {
-		minutes := p.Time.Sub(time.Now()).Minutes()
+		minutes := time.Until(p.Time).Minutes()
 
 		if highIn < 0 && p.Value >= highThreshold {
 			if i > 0 && points[i-1].Value < highThreshold {
 				// Interpolate
 				ratio := (highThreshold - points[i-1].Value) / (p.Value - points[i-1].Value)
-				prevMin := points[i-1].Time.Sub(time.Now()).Minutes()
+				prevMin := time.Until(points[i-1].Time).Minutes()
 				highIn = prevMin + ratio*(minutes-prevMin)
 			} else {
 				highIn = minutes
@@ -1114,7 +1121,7 @@ func (e *OrefEngine) calculateThresholdTimes(
 		if lowIn < 0 && p.Value <= lowThreshold {
 			if i > 0 && points[i-1].Value > lowThreshold {
 				ratio := (points[i-1].Value - lowThreshold) / (points[i-1].Value - p.Value)
-				prevMin := points[i-1].Time.Sub(time.Now()).Minutes()
+				prevMin := time.Until(points[i-1].Time).Minutes()
 				lowIn = prevMin + ratio*(minutes-prevMin)
 			} else {
 				lowIn = minutes
@@ -1142,9 +1149,4 @@ func (e *OrefEngine) GetCircadianProfile() CircadianProfile {
 // GetPatternStats returns statistics about learned patterns
 func (e *OrefEngine) GetPatternStats() (mealCount, correctionCount int) {
 	return len(e.patterns.MealPatterns), len(e.patterns.CorrectionPatterns)
-}
-
-// Debug logging
-func (e *OrefEngine) logDebug(format string, args ...interface{}) {
-	fmt.Printf("[OrefEngine] "+format+"\n", args...)
 }
