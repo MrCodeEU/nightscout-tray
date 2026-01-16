@@ -107,8 +107,10 @@ func main() {
 
 	// Left click opens main dashboard
 	tray.OnClick(func() {
-		mainWindow.Show()
-		mainWindow.Focus()
+		if mainWindow.IsHidden() {
+			mainWindow.Show()
+			mainWindow.Focus()
+		}
 	})
 
 	// Pass tray reference to service for dynamic updates

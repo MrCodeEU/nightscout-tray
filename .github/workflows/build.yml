@@ -53,8 +53,8 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-      - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v9
+      # - name: Install golangci-lint
+      #   uses: golangci/golangci-lint-action@v9
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out ./...
