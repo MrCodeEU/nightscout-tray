@@ -1,27 +1,15 @@
-linters-settings:
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-  gocyclo:
-    min-complexity: 30
-  gosec:
-    excludes:
-      - G104
-
-run:
-  timeout: 5m
-  skip-dirs:
-    - build
-
-issues:
-  exclude-rules:
-    - path: "build/"
-      linters:
-        - gocyclo
-        - gosec
-        - unused
+version: "2"
 
 linters:
+  settings:
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gocyclo:
+      min-complexity: 30
+    gosec:
+      excludes:
+        - G104
   enable:
     - goconst
     - gocyclo
@@ -31,3 +19,9 @@ linters:
     - unconvert
   disable:
     - revive
+  exclusions:
+    paths:
+      - "build/"
+
+run:
+  timeout: 5m
