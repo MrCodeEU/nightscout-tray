@@ -27,6 +27,7 @@ type Dependency struct {
 	FailureMsg string
 }
 
+//nolint:gocyclo,gosec // Build script with necessary complexity and command execution
 func main() {
 	fmt.Println("Checking iOS development dependencies...")
 	fmt.Println("=" + strings.Repeat("=", 50))
@@ -288,6 +289,7 @@ func main() {
 	}
 }
 
+//nolint:gosec // Build script command checking
 func checkCommand(args []string) bool {
 	if len(args) == 0 {
 		return false

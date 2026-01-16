@@ -399,6 +399,7 @@ func (s *Service) getParamsPath() (string, error) {
 	}
 
 	appDir := filepath.Join(configDir, "nightscout-tray")
+	//nolint:gosec // 0755 is standard permission for application directories
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		return "", err
 	}
@@ -429,6 +430,7 @@ func (s *Service) loadParams() error {
 		return err
 	}
 
+	//nolint:gosec // Reading from trusted app data directory
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
