@@ -18,19 +18,29 @@ frontend:
 
 # Development mode
 dev:
-	wails dev
+	wails3 dev
 
 # Build for current platform
 build: frontend
-	wails build
+	wails3 build
 
-# Build for all platforms (requires cross-compilation setup)
+# Build for Windows
+build-windows: frontend
+	wails3 task windows:build
+
+# Build for Linux (requires Linux/WSL/Docker)
+build-linux: frontend
+	wails3 task linux:build
+
+# Build for macOS (requires macOS)
+build-darwin: frontend
+	wails3 task darwin:build
+
+# Build for all platforms (requires cross-compilation setup with Docker)
 build-all: frontend
-	wails build -platform linux/amd64
-	wails build -platform linux/arm64
-	wails build -platform windows/amd64
-	wails build -platform darwin/amd64
-	wails build -platform darwin/arm64
+	@echo "Building for all platforms requires Docker for cross-compilation"
+	@echo "Use 'make build-windows', 'make build-linux', or 'make build-darwin' for specific platforms"
+	wails3 task windows:build
 
 # Run tests
 test:

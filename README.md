@@ -1,130 +1,59 @@
-# Nightscout Tray
+# Welcome to Your New Wails3 Project!
 
-A modern, cross-platform system tray application for monitoring glucose levels from your Nightscout instance.
+Congratulations on generating your Wails3 application! This README will guide you through the next steps to get your project up and running.
 
-![Nightscout Tray](docs/screenshot.png)
+## Getting Started
 
-## Features
+1. Navigate to your project directory in the terminal.
 
-- 📊 **Real-time glucose monitoring** - Display current glucose value and trend arrow in system tray
-- 📈 **Interactive chart** - View glucose history with customizable time ranges (4h, 8h, 12h, 24h, custom)
-- ⚠️ **Configurable alerts** - System notifications for high/low glucose with optional sounds
-- 🌍 **Multi-unit support** - Works with both mg/dL and mmol/L
-- 🎨 **Customizable appearance** - Colors, chart styles (line, points, or both)
-- 🔄 **Flexible refresh rate** - From 30 seconds to 10 minutes
-- 🚀 **Auto-start** - Optional launch at system boot
-- 🔐 **Secure** - Supports Nightscout API tokens and hashed secrets
+2. To run your application in development mode, use the following command:
 
-## Supported Platforms
+   ```
+   wails3 dev
+   ```
 
-- **Linux**: Debian/Ubuntu (.deb), Fedora (.rpm), Arch (AUR), AppImage
-- **Windows**: Installer (NSIS) and portable .exe
-- **macOS**: .dmg and .app bundle
+   This will start your application and enable hot-reloading for both frontend and backend changes.
 
-## Installation
+3. To build your application for production, use:
 
-### Package Managers (Recommended)
+   ```
+   wails3 build
+   ```
 
-#### Homebrew (macOS/Linux)
-```bash
-brew tap mrcode/tap
-brew install nightscout-tray
-```
+   This will create a production-ready executable in the `build` directory.
 
-#### Scoop (Windows)
-```powershell
-scoop bucket add mrcode https://github.com/mrcode/scoop-bucket
-scoop install nightscout-tray
-```
+## Exploring Wails3 Features
 
-#### AUR (Arch Linux)
-```bash
-yay -S nightscout-tray-bin
-# or: paru -S nightscout-tray-bin
-```
+Now that you have your project set up, it's time to explore the features that Wails3 offers:
 
-### Quick Install Scripts
+1. **Check out the examples**: The best way to learn is by example. Visit the `examples` directory in the `v3/examples` directory to see various sample applications.
 
-#### Linux/macOS
-```bash
-curl -sSL https://raw.githubusercontent.com/mrcode/nightscout-tray/main/dist/scripts/install.sh | bash
-```
+2. **Run an example**: To run any of the examples, navigate to the example's directory and use:
 
-#### Windows (PowerShell)
-```powershell
-irm https://raw.githubusercontent.com/mrcode/nightscout-tray/main/dist/scripts/install.ps1 | iex
-```
+   ```
+   go run .
+   ```
 
-### Manual Installation
+   Note: Some examples may be under development during the alpha phase.
 
-#### Linux
+3. **Explore the documentation**: Visit the [Wails3 documentation](https://v3.wails.io/) for in-depth guides and API references.
 
-**Debian/Ubuntu**
-```bash
-sudo dpkg -i nightscout-tray_1.0.0_amd64.deb
-```
+4. **Join the community**: Have questions or want to share your progress? Join the [Wails Discord](https://discord.gg/JDdSxwjhGf) or visit the [Wails discussions on GitHub](https://github.com/wailsapp/wails/discussions).
 
-**Fedora/RHEL**
-```bash
-sudo dnf install nightscout-tray-1.0.0.x86_64.rpm
-```
+## Project Structure
 
-**AppImage**
-```bash
-chmod +x nightscout-tray-x86_64.AppImage
-./nightscout-tray-x86_64.AppImage
-```
+Take a moment to familiarize yourself with your project structure:
 
-#### Windows
+- `frontend/`: Contains your frontend code (HTML, CSS, JavaScript/TypeScript)
+- `main.go`: The entry point of your Go backend
+- `app.go`: Define your application structure and methods here
+- `wails.json`: Configuration file for your Wails project
 
-Download and run `nightscout-tray-installer.exe` or extract the portable ZIP.
+## Next Steps
 
-#### macOS
+1. Modify the frontend in the `frontend/` directory to create your desired UI.
+2. Add backend functionality in `main.go`.
+3. Use `wails3 dev` to see your changes in real-time.
+4. When ready, build your application with `wails3 build`.
 
-Mount the DMG and drag Nightscout Tray to Applications.
-
-## Configuration
-
-1. Launch the application
-2. Click on the tray icon to open the main window
-3. Navigate to Settings
-4. Enter your Nightscout URL and API secret/token
-5. Configure glucose ranges and alert thresholds
-6. Customize chart appearance
-
-## Building from Source
-
-### Prerequisites
-
-- Go 1.22+
-- Node.js 18+
-- Wails CLI: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
-
-### Development
-
-```bash
-# Install dependencies
-wails dev
-
-# Run in development mode
-wails dev
-```
-
-### Production Build
-
-```bash
-wails build
-```
-
-## License
-
-MIT License - see [LICENSE](LICENSE) file.
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
-
-## Acknowledgments
-
-- [Nightscout](https://nightscout.github.io/) - The amazing open-source CGM data platform
-- [Wails](https://wails.io/) - Cross-platform desktop app framework for Go
+Happy coding with Wails3! If you encounter any issues or have questions, don't hesitate to consult the documentation or reach out to the Wails community.
