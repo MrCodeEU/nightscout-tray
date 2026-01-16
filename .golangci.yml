@@ -25,3 +25,10 @@ linters:
 
 run:
   timeout: 5m
+  build-tags:
+    - linux
+  skip-dirs:
+    - build
+    - build/ios
+    - build/darwin
+    - build/android

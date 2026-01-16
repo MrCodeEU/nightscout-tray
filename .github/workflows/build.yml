@@ -56,8 +56,7 @@ jobs:
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
-          skip-cache: true
+          args: --skip-dirs=build --build-tags=linux
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out ./...
