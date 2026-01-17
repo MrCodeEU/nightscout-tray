@@ -216,11 +216,13 @@
                             <div class="time">Updated {status ? formatTime(status.time) : '--:--'}</div>
                             <div class="delta">{status && status.delta ? (status.delta > 0 ? '+' + status.delta : status.delta) : ''}</div>
                         </div>
-                        {#if predictionData}
+                        {#if status}
                             <div class="iob-cob">
-                                <span class="iob" title="Insulin on Board">💉 IOB: {formatNumber(predictionData.iob, 2)}u</span>
-                                <span class="cob" title="Carbs on Board">🍞 COB: {formatNumber(predictionData.cob, 0)}g</span>
+                                <span class="iob" title="Insulin on Board">💉 IOB: {formatNumber(status.iob || predictionData?.iob || 0, 2)}u</span>
+                                <span class="cob" title="Carbs on Board">🍞 COB: {formatNumber(status.cob || predictionData?.cob || 0, 0)}g</span>
                             </div>
+                        {/if}
+                        {#if predictionData}
                             {#if predictionData.highInMinutes > 0 || predictionData.lowInMinutes > 0}
                                 <div class="high-low-in">
                                     {#if predictionData.lowInMinutes > 0}

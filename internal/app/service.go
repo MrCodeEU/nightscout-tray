@@ -162,21 +162,33 @@ func (s *NightscoutService) fetchAndUpdate() {
 func (s *NightscoutService) createStatus(entry *models.GlucoseEntry) *models.GlucoseStatus {
 	s.mu.RLock()
 	settings := s.settings
+	predSvc := s.predService
 	s.mu.RUnlock()
 
 	staleMinutes := int(time.Since(entry.Time()).Minutes())
 
-	return &models.GlucoseStatus{
+	status := &models.GlucoseStatus{
 		Value:        entry.SGV,
 		ValueMmol:    entry.ValueMmolL(),
 		Trend:        entry.TrendArrow(),
 		Direction:    entry.Direction,
 		Time:         entry.Time(),
-		Delta:        0, 
+		Delta:        0,
 		Status:       settings.GetGlucoseStatus(entry.SGV),
 		StaleMinutes: staleMinutes,
 		IsStale:      staleMinutes > 15,
 	}
+
+	// Add IoB/CoB if prediction service is available
+	if predSvc != nil {
+		iob, cob, err := predSvc.GetIOBCOB()
+		if err == nil {
+			status.IOB = iob
+			status.COB = cob
+		}
+	}
+
+	return status
 }
 
 func (s *NightscoutService) SetTray(tray *application.SystemTray) {

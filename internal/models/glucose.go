@@ -80,6 +80,8 @@ type GlucoseStatus struct {
 	Status       string    `json:"status"`       // "normal", "high", "low", "urgent_high", "urgent_low"
 	StaleMinutes int       `json:"staleMinutes"` // Minutes since last reading
 	IsStale      bool      `json:"isStale"`      // True if data is stale (>15 min)
+	IOB          float64   `json:"iob"`          // Insulin on Board (units)
+	COB          float64   `json:"cob"`          // Carbs on Board (grams)
 }
 
 // ChartData represents data for the glucose chart

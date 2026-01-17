@@ -44,7 +44,7 @@ func NewService(client *nightscout.Client) *Service {
 		mlPredictor:   NewMLPredictor(nil),
 		orefEngine:    NewOrefEngine(nil), // Initialize oref engine
 		params:        models.NewDiabetesParameters(),
-		cacheDuration: 5 * time.Minute,
+		cacheDuration: 1 * time.Minute, // Reduced from 5 minutes for more frequent IoB/CoB updates
 	}
 
 	// Try to load saved parameters

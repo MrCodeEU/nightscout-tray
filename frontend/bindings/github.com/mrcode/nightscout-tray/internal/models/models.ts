@@ -234,6 +234,16 @@ export class GlucoseStatus {
      */
     "isStale": boolean;
 
+    /**
+     * Insulin on Board (units)
+     */
+    "iob": number;
+
+    /**
+     * Carbs on Board (grams)
+     */
+    "cob": number;
+
     /** Creates a new GlucoseStatus instance. */
     constructor($$source: Partial<GlucoseStatus> = {}) {
         if (!("value" in $$source)) {
@@ -262,6 +272,12 @@ export class GlucoseStatus {
         }
         if (!("isStale" in $$source)) {
             this["isStale"] = false;
+        }
+        if (!("iob" in $$source)) {
+            this["iob"] = 0;
+        }
+        if (!("cob" in $$source)) {
+            this["cob"] = 0;
         }
 
         Object.assign(this, $$source);
