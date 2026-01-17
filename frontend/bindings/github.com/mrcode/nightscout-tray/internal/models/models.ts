@@ -291,6 +291,11 @@ export class PredictedPoint {
     "value": number;
 
     /**
+     * Normalized integer for consistency
+     */
+    "valueMgDL": number;
+
+    /**
      * Predicted glucose in mmol/L
      */
     "valueMmol": number;
@@ -323,6 +328,9 @@ export class PredictedPoint {
         }
         if (!("value" in $$source)) {
             this["value"] = 0;
+        }
+        if (!("valueMgDL" in $$source)) {
+            this["valueMgDL"] = 0;
         }
         if (!("valueMmol" in $$source)) {
             this["valueMmol"] = 0;
@@ -365,6 +373,16 @@ export class PredictionResult {
      * Long-term predictions (less accurate, 3-6 hours)
      */
     "longTerm": PredictedPoint[];
+
+    /**
+     * For LSTM model compatibility - flat list of predictions
+     */
+    "points"?: PredictedPoint[];
+
+    /**
+     * Unit for display (mg/dL or mmol/L)
+     */
+    "unit"?: string;
 
     /**
      * Active insulin on board
@@ -475,12 +493,16 @@ export class PredictionResult {
     static createFrom($$source: any = {}): PredictionResult {
         const $$createField0_0 = $$createType3;
         const $$createField1_0 = $$createType3;
+        const $$createField2_0 = $$createType3;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("shortTerm" in $$parsedSource) {
             $$parsedSource["shortTerm"] = $$createField0_0($$parsedSource["shortTerm"]);
         }
         if ("longTerm" in $$parsedSource) {
             $$parsedSource["longTerm"] = $$createField1_0($$parsedSource["longTerm"]);
+        }
+        if ("points" in $$parsedSource) {
+            $$parsedSource["points"] = $$createField2_0($$parsedSource["points"]);
         }
         return new PredictionResult($$parsedSource as Partial<PredictionResult>);
     }

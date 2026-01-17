@@ -105,10 +105,27 @@ func (m *MLPredictor) SetParameters(params *models.DiabetesParameters) {
 	m.params = params
 }
 
+// TrainLSTM trains the LSTM neural network on historical glucose data
+// This is the main entry point for LSTM training from the service
+func (m *MLPredictor) TrainLSTM(history []models.GlucoseEntry) error {
+	fmt.Printf("LSTM Training: Starting with %d glucose entries\n", len(history))
+	err := m.Train(history)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("LSTM Training: Model trained successfully, isTrained=%v\n", m.isTrained)
+	return nil
+}
+
+// IsTrained returns whether the LSTM model has been trained
+func (m *MLPredictor) IsTrained() bool {
+	return m.isTrained
+}
+
 // Train trains the LSTM model on the provided history (simple interface for app.go)
 func (m *MLPredictor) Train(history []models.GlucoseEntry) error {
 	if len(history) < InputSeqLen+1 {
-		return fmt.Errorf("insufficient history for training")
+		return fmt.Errorf("insufficient history for training (need %d, got %d)", InputSeqLen+1, len(history))
 	}
 
 	// Prepare dataset
@@ -278,11 +295,8 @@ func (m *MLPredictor) LearnFromHistory(entries []models.GlucoseEntry, treatments
 
 	// Cluster sequences into patterns
 	m.clusterPatterns()
-
-	// Also train LSTM if we have enough data
-	if len(entries) > InputSeqLen*2 {
-		_ = m.Train(entries) // Ignore error, pattern matching will still work
-	}
+	
+	// Note: LSTM training is now done separately via TrainLSTM() for better progress reporting
 }
 
 // buildSequences creates training sequences from historical data

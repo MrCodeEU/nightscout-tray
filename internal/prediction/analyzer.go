@@ -35,6 +35,15 @@ func (a *Analyzer) GetProgress() *models.CalculationProgress {
 	return &p
 }
 
+// SetProgress sets the current calculation progress (called from service)
+func (a *Analyzer) SetProgress(stage string, progress float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	
+	a.progress.Stage = stage
+	a.progress.Progress = progress
+}
+
 // GetParameters returns the calculated parameters
 func (a *Analyzer) GetParameters() *models.DiabetesParameters {
 	a.mu.RLock()

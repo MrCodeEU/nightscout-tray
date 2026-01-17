@@ -21,12 +21,12 @@ type Service struct {
 	mlPredictor *MLPredictor
 	orefEngine  *OrefEngine // New oref1-inspired prediction engine
 
-	mu                 sync.RWMutex
-	params             *models.DiabetesParameters
-	lastPrediction     *models.PredictionResult
-	isCalculating      bool
-	calculationCancel  chan struct{}
-	useMLPrediction    bool // Whether to use ML-based prediction
+	mu                sync.RWMutex
+	params            *models.DiabetesParameters
+	lastPrediction    *models.PredictionResult
+	isCalculating     bool
+	calculationCancel chan struct{}
+	useMLPrediction   bool // Whether to use ML-based prediction
 
 	// Cached data
 	cachedEntries    []models.GlucoseEntry
@@ -70,7 +70,7 @@ func (s *Service) SetClient(client *nightscout.Client) {
 func (s *Service) GetParameters() *models.DiabetesParameters {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	p := *s.params
 	return &p
 }
@@ -90,6 +90,8 @@ func (s *Service) IsCalculating() bool {
 // StartCalculation begins parameter calculation with the given timeframe
 // mode can be "statistical" or "ml"
 func (s *Service) StartCalculation(days int, mode string) error {
+	fmt.Printf("StartCalculation called: days=%d, mode=%s\n", days, mode)
+	
 	s.mu.Lock()
 	if s.isCalculating {
 		s.mu.Unlock()
@@ -110,6 +112,26 @@ func (s *Service) CancelCalculation() {
 
 	if s.isCalculating && s.calculationCancel != nil {
 		close(s.calculationCancel)
+		s.calculationCancel = nil
+		s.isCalculating = false
+		s.analyzer.SetProgress("Cancelled", 0)
+	}
+}
+
+// isCancelled checks if calculation was cancelled
+func (s *Service) isCancelled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	if s.calculationCancel == nil {
+		return true
+	}
+	
+	select {
+	case <-s.calculationCancel:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -117,6 +139,7 @@ func (s *Service) runCalculation(days int, mode string) {
 	defer func() {
 		s.mu.Lock()
 		s.isCalculating = false
+		s.calculationCancel = nil
 		s.mu.Unlock()
 	}()
 
@@ -125,72 +148,117 @@ func (s *Service) runCalculation(days int, mode string) {
 	s.mu.RUnlock()
 
 	if client == nil {
+		s.analyzer.SetProgress("Error: No client configured", 0)
 		return
 	}
 
-	// Fetch entries
+	// Stage 1: Fetch entries
+	s.analyzer.SetProgress("Fetching glucose entries...", 5)
+	if s.isCancelled() {
+		return
+	}
+	
 	entries, err := client.GetEntriesDays(days)
 	if err != nil {
 		fmt.Printf("Error fetching entries: %v\n", err)
+		s.analyzer.SetProgress("Error fetching entries", 0)
 		return
 	}
-	
-	fmt.Printf("Fetched %d glucose entries for %d days\n", len(entries), days)
 
-	// Fetch treatments
+	fmt.Printf("Fetched %d glucose entries for %d days\n", len(entries), days)
+	s.analyzer.SetProgress("Fetching treatments...", 15)
+	
+	if s.isCancelled() {
+		return
+	}
+
+	// Stage 2: Fetch treatments
 	treatments, err := client.GetTreatmentsDays(days)
 	if err != nil {
 		fmt.Printf("Error fetching treatments: %v\n", err)
+		s.analyzer.SetProgress("Error fetching treatments", 0)
 		return
 	}
-	
+
 	fmt.Printf("Fetched %d treatments for %d days\n", len(treatments), days)
+	
+	if s.isCancelled() {
+		return
+	}
 
 	// Run analysis based on mode
 	var params *models.DiabetesParameters
 	if mode == "ml" {
-		// ML-based analysis (uses oref1-inspired engine)
+		// Stage 3: ML-based analysis
+		s.analyzer.SetProgress("Running ML analysis...", 25)
 		params, err = s.analyzer.AnalyzeDataML(entries, treatments)
 		
-		// Train the new oref engine with historical patterns
+		if s.isCancelled() {
+			return
+		}
+
+		// Stage 4: Train the oref engine with historical patterns
 		if err == nil {
+			s.analyzer.SetProgress("Training pattern recognition engine...", 50)
 			fmt.Println("Training oref prediction engine with historical patterns...")
 			s.orefEngine.LearnFromHistory(entries, treatments)
-			
+
 			mealPatterns, correctionPatterns := s.orefEngine.GetPatternStats()
-			fmt.Printf("Oref engine learned %d meal patterns, %d correction patterns\n", 
+			fmt.Printf("Oref engine learned %d meal patterns, %d correction patterns\n",
 				mealPatterns, correctionPatterns)
-			
+
 			autosens := s.orefEngine.GetAutosensRatio()
 			fmt.Printf("Current Autosens ratio: %.2f\n", autosens)
-			
+
 			// Also update time-of-day parameters from learned circadian profile
 			profile := s.orefEngine.GetCircadianProfile()
 			s.updateTimeOfDayParams(params, profile)
 			
-			// Train legacy ML predictor as well for comparison
+			if s.isCancelled() {
+				return
+			}
+
+			// Stage 5: Train LSTM neural network
+			s.analyzer.SetProgress("Training LSTM neural network...", 70)
+			fmt.Println("Training LSTM neural network for glucose prediction...")
+			err := s.mlPredictor.TrainLSTM(entries)
+			if err != nil {
+				fmt.Printf("LSTM training error (non-fatal): %v\n", err)
+			} else {
+				fmt.Println("LSTM neural network trained successfully!")
+			}
+			
+			// Also train pattern library
+			s.analyzer.SetProgress("Building pattern library...", 85)
 			s.mlPredictor.LearnFromHistory(entries, treatments)
 			fmt.Printf("ML predictor learned %d patterns\n", len(s.mlPredictor.patterns.patterns))
 		}
-		
+
 		s.mu.Lock()
 		s.useMLPrediction = true
 		s.mu.Unlock()
 	} else {
 		// Statistical analysis (default, faster)
+		s.analyzer.SetProgress("Running statistical analysis...", 30)
 		params, err = s.analyzer.AnalyzeData(entries, treatments)
-		
+
 		s.mu.Lock()
 		s.useMLPrediction = false
 		s.mu.Unlock()
 	}
 	
-	if err != nil {
-		fmt.Printf("Error analyzing data: %v\n", err)
+	if s.isCancelled() {
 		return
 	}
 
-	// Update parameters
+	if err != nil {
+		fmt.Printf("Error analyzing data: %v\n", err)
+		s.analyzer.SetProgress("Error analyzing data", 0)
+		return
+	}
+
+	// Stage 6: Update parameters
+	s.analyzer.SetProgress("Saving parameters...", 95)
 	s.mu.Lock()
 	s.params = params
 	s.predictor.SetParameters(params)
@@ -202,6 +270,9 @@ func (s *Service) runCalculation(days int, mode string) {
 	if err := s.saveParams(); err != nil {
 		fmt.Printf("Error saving parameters: %v\n", err)
 	}
+	
+	s.analyzer.SetProgress("Complete!", 100)
+	fmt.Println("Parameter calculation complete!")
 }
 
 // updateTimeOfDayParams updates ISF/ICR by time of day from learned circadian profile
@@ -211,42 +282,42 @@ func (s *Service) updateTimeOfDayParams(params *models.DiabetesParameters, profi
 	// Midday: 11-17 (hours 11,12,13,14,15,16)
 	// Evening: 17-22 (hours 17,18,19,20,21)
 	// Night: 22-6 (hours 22,23,0,1,2,3,4,5)
-	
-	morningISF := (profile.HourlySensitivity[6] + profile.HourlySensitivity[7] + 
+
+	morningISF := (profile.HourlySensitivity[6] + profile.HourlySensitivity[7] +
 		profile.HourlySensitivity[8] + profile.HourlySensitivity[9] + profile.HourlySensitivity[10]) / 5
-	middayISF := (profile.HourlySensitivity[11] + profile.HourlySensitivity[12] + 
+	middayISF := (profile.HourlySensitivity[11] + profile.HourlySensitivity[12] +
 		profile.HourlySensitivity[13] + profile.HourlySensitivity[14] + profile.HourlySensitivity[15] + profile.HourlySensitivity[16]) / 6
-	eveningISF := (profile.HourlySensitivity[17] + profile.HourlySensitivity[18] + 
+	eveningISF := (profile.HourlySensitivity[17] + profile.HourlySensitivity[18] +
 		profile.HourlySensitivity[19] + profile.HourlySensitivity[20] + profile.HourlySensitivity[21]) / 5
-	nightISF := (profile.HourlySensitivity[22] + profile.HourlySensitivity[23] + 
-		profile.HourlySensitivity[0] + profile.HourlySensitivity[1] + profile.HourlySensitivity[2] + 
+	nightISF := (profile.HourlySensitivity[22] + profile.HourlySensitivity[23] +
+		profile.HourlySensitivity[0] + profile.HourlySensitivity[1] + profile.HourlySensitivity[2] +
 		profile.HourlySensitivity[3] + profile.HourlySensitivity[4] + profile.HourlySensitivity[5]) / 8
-	
+
 	// Apply sensitivity factors to base ISF
 	params.ISFByTimeOfDay[string(models.Morning)] = params.ISF * morningISF
 	params.ISFByTimeOfDay[string(models.Midday)] = params.ISF * middayISF
 	params.ISFByTimeOfDay[string(models.Evening)] = params.ISF * eveningISF
 	params.ISFByTimeOfDay[string(models.Night)] = params.ISF * nightISF
-	
+
 	// Same for ICR (but inverse - higher factor means lower ICR needed)
-	morningICR := (profile.HourlyICR[6] + profile.HourlyICR[7] + 
+	morningICR := (profile.HourlyICR[6] + profile.HourlyICR[7] +
 		profile.HourlyICR[8] + profile.HourlyICR[9] + profile.HourlyICR[10]) / 5
-	middayICR := (profile.HourlyICR[11] + profile.HourlyICR[12] + 
+	middayICR := (profile.HourlyICR[11] + profile.HourlyICR[12] +
 		profile.HourlyICR[13] + profile.HourlyICR[14] + profile.HourlyICR[15] + profile.HourlyICR[16]) / 6
-	eveningICR := (profile.HourlyICR[17] + profile.HourlyICR[18] + 
+	eveningICR := (profile.HourlyICR[17] + profile.HourlyICR[18] +
 		profile.HourlyICR[19] + profile.HourlyICR[20] + profile.HourlyICR[21]) / 5
-	nightICR := (profile.HourlyICR[22] + profile.HourlyICR[23] + 
-		profile.HourlyICR[0] + profile.HourlyICR[1] + profile.HourlyICR[2] + 
+	nightICR := (profile.HourlyICR[22] + profile.HourlyICR[23] +
+		profile.HourlyICR[0] + profile.HourlyICR[1] + profile.HourlyICR[2] +
 		profile.HourlyICR[3] + profile.HourlyICR[4] + profile.HourlyICR[5]) / 8
-	
+
 	// Apply ICR factors (lower factor = need more insulin = lower ICR value)
 	params.ICRByTimeOfDay[string(models.Morning)] = params.ICR * morningICR
 	params.ICRByTimeOfDay[string(models.Midday)] = params.ICR * middayICR
 	params.ICRByTimeOfDay[string(models.Evening)] = params.ICR * eveningICR
 	params.ICRByTimeOfDay[string(models.Night)] = params.ICR * nightICR
-	
+
 	fmt.Printf("Time-of-day ISF: Morning=%.1f, Midday=%.1f, Evening=%.1f, Night=%.1f\n",
-		params.ISFByTimeOfDay[string(models.Morning)], 
+		params.ISFByTimeOfDay[string(models.Morning)],
 		params.ISFByTimeOfDay[string(models.Midday)],
 		params.ISFByTimeOfDay[string(models.Evening)],
 		params.ISFByTimeOfDay[string(models.Night)])

@@ -107,7 +107,7 @@ func main() {
 
 	// Left click opens main dashboard
 	tray.OnClick(func() {
-		if mainWindow.IsHidden() {
+		if !mainWindow.IsVisible() {
 			mainWindow.Show()
 			mainWindow.Focus()
 		}
