@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=nightscout-tray
+Exec=nightscout-tray
+Icon=nightscout-tray
+Categories=Development;
+Terminal=false
+Keywords=wails
+Version=1.0
+StartupNotify=false

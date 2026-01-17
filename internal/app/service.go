@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -231,7 +232,12 @@ func (s *NightscoutService) updateTray(status *models.GlucoseStatus) {
 	}
 	
 	t.SetLabel(valStr + " " + status.Trend)
-	// No tooltip - we use the popup window instead
+	
+	// On Linux, show tooltip since hover popup doesn't work
+	if runtime.GOOS != "windows" {
+		tooltip := s.iconGen.GenerateTooltip(status, s.settings)
+		t.SetTooltip(tooltip)
+	}
 
 	iconData := s.iconGen.GenerateIcon(valStr, status.Direction, status)
 	if iconData != nil {
@@ -248,7 +254,11 @@ func (s *NightscoutService) updateTrayError(err error) {
 		return
 	}
 	t.SetLabel("ERR")
-	// No tooltip - we use the popup window instead
+	
+	// On Linux, show tooltip since hover popup doesn't work
+	if runtime.GOOS != "windows" {
+		t.SetTooltip("Error connecting to Nightscout")
+	}
 }
 
 func (s *NightscoutService) hydrateHistory() {

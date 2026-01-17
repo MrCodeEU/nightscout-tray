@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"log"
+	"runtime"
 	"time"
 
 	"github.com/mrcode/nightscout-tray/internal/app"
@@ -75,11 +76,18 @@ func main() {
 	// Set initial icon from embedded PNG
 	tray.SetIcon(appIcon)
 	tray.SetLabel("...")
-	tray.SetTooltip("") // Empty tooltip - we use the popup window instead
+	
+	// On Linux, show tooltip since hover popup doesn't work
+	// On Windows, we use the popup window on hover instead
+	if runtime.GOOS == "windows" {
+		tray.SetTooltip("")
+	} else {
+		tray.SetTooltip("Nightscout Tray - Loading...")
+	}
 
 	// Create tray menu
 	trayMenu := application.NewMenu()
-	trayMenu.Add("Show Dashboard").OnClick(func(_ *application.Context) {
+	trayMenu.Add("Open Dashboard").OnClick(func(_ *application.Context) {
 		mainWindow.Show()
 		mainWindow.Focus()
 	})
@@ -89,29 +97,50 @@ func main() {
 	})
 	tray.SetMenu(trayMenu)
 
-	// Show popup window on hover using OnMouseEnter/OnMouseLeave
-	tray.OnMouseEnter(func() {
-		// Position window near the tray icon and show it
-		_ = tray.PositionWindow(trayWindow, 5)
-		trayWindow.Show()
-	})
+	// Platform-specific tray behavior
+	if runtime.GOOS == "windows" {
+		// Windows: Hover shows popup, left click opens dashboard
+		tray.OnMouseEnter(func() {
+			_ = tray.PositionWindow(trayWindow, 5)
+			trayWindow.Show()
+		})
 
-	tray.OnMouseLeave(func() {
-		// Hide the popup when mouse leaves the tray icon
-		// Small delay handled by WindowDebounce
-		trayWindow.Hide()
-	})
+		tray.OnMouseLeave(func() {
+			trayWindow.Hide()
+		})
 
-	// Add debounce to prevent flickering
-	tray.WindowDebounce(200 * time.Millisecond)
+		tray.WindowDebounce(200 * time.Millisecond)
 
-	// Left click opens main dashboard
-	tray.OnClick(func() {
-		if !mainWindow.IsVisible() {
-			mainWindow.Show()
-			mainWindow.Focus()
-		}
-	})
+		tray.OnClick(func() {
+			if !mainWindow.IsVisible() {
+				mainWindow.Show()
+				mainWindow.Focus()
+			}
+		})
+	} else {
+		// Linux/macOS: Left click toggles popup, right-click menu for dashboard
+		// Note: PositionWindow may not work on Linux (StatusNotifierItem doesn't provide position)
+		// so we also manually position the window near the top-right corner where panels usually are
+		var popupVisible bool
+		tray.OnClick(func() {
+			if popupVisible {
+				trayWindow.Hide()
+				popupVisible = false
+			} else {
+				// Try PositionWindow first (works on some systems)
+				err := tray.PositionWindow(trayWindow, 5)
+				if err != nil {
+					// Fallback: position in top-right corner
+					// Most Linux panels are at the top, and system tray is on the right
+					// Use reasonable defaults for common screen resolutions
+					// Window is 320x280, position it near top-right with some margin
+					trayWindow.SetPosition(1550, 35)
+				}
+				trayWindow.Show()
+				popupVisible = true
+			}
+		})
+	}
 
 	// Pass tray reference to service for dynamic updates
 	nsService.SetTray(tray)
