@@ -45,11 +45,20 @@ func (l *LSTM) initWeights() {
 	mkMat := func(r, c int) [][]float64 { return newMatrix(r, c, scale) }
 	mkVec := func(r int) [][]float64 { return newMatrix(r, 1, 0) } // bias as col vector
 
-	l.Wf = mkMat(l.HiddenSize, l.InputSize); l.Uf = mkMat(l.HiddenSize, l.HiddenSize); l.bf = mkVec(l.HiddenSize)
-	l.Wi = mkMat(l.HiddenSize, l.InputSize); l.Ui = mkMat(l.HiddenSize, l.HiddenSize); l.bi = mkVec(l.HiddenSize)
-	l.Wc = mkMat(l.HiddenSize, l.InputSize); l.Uc = mkMat(l.HiddenSize, l.HiddenSize); l.bc = mkVec(l.HiddenSize)
-	l.Wo = mkMat(l.HiddenSize, l.InputSize); l.Uo = mkMat(l.HiddenSize, l.HiddenSize); l.bo = mkVec(l.HiddenSize)
-	l.Why = newMatrix(l.OutputSize, l.HiddenSize, scale); l.by = mkVec(l.OutputSize)
+	l.Wf = mkMat(l.HiddenSize, l.InputSize)
+	l.Uf = mkMat(l.HiddenSize, l.HiddenSize)
+	l.bf = mkVec(l.HiddenSize)
+	l.Wi = mkMat(l.HiddenSize, l.InputSize)
+	l.Ui = mkMat(l.HiddenSize, l.HiddenSize)
+	l.bi = mkVec(l.HiddenSize)
+	l.Wc = mkMat(l.HiddenSize, l.InputSize)
+	l.Uc = mkMat(l.HiddenSize, l.HiddenSize)
+	l.bc = mkVec(l.HiddenSize)
+	l.Wo = mkMat(l.HiddenSize, l.InputSize)
+	l.Uo = mkMat(l.HiddenSize, l.HiddenSize)
+	l.bo = mkVec(l.HiddenSize)
+	l.Why = newMatrix(l.OutputSize, l.HiddenSize, scale)
+	l.by = mkVec(l.OutputSize)
 }
 
 // Forward performs the forward pass
@@ -82,7 +91,7 @@ func (l *LSTM) Forward(inputs [][]float64) ([][]float64, [][][]float64, [][]floa
 		h[t+1] = hNext
 		c[t+1] = cNext
 		outputs[t] = y
-		
+
 		cache[t] = [][]float64{f, i, cBar, o}
 	}
 
@@ -92,15 +101,26 @@ func (l *LSTM) Forward(inputs [][]float64) ([][]float64, [][][]float64, [][]floa
 // Train performs one step of training (Backpropagation Through Time)
 func (l *LSTM) Train(inputs [][]float64, targets [][]float64) float64 {
 	T := len(inputs)
-	if T == 0 { return 0 }
+	if T == 0 {
+		return 0
+	}
 	outputs, cache, h, c := l.Forward(inputs)
 
 	// Initialize gradients
-	dWf := zeroMatrix(l.HiddenSize, l.InputSize); dUf := zeroMatrix(l.HiddenSize, l.HiddenSize); dbf := zeroMatrix(l.HiddenSize, 1)
-	dWi := zeroMatrix(l.HiddenSize, l.InputSize); dUi := zeroMatrix(l.HiddenSize, l.HiddenSize); dbi := zeroMatrix(l.HiddenSize, 1)
-	dWc := zeroMatrix(l.HiddenSize, l.InputSize); dUc := zeroMatrix(l.HiddenSize, l.HiddenSize); dbc := zeroMatrix(l.HiddenSize, 1)
-	dWo := zeroMatrix(l.HiddenSize, l.InputSize); dUo := zeroMatrix(l.HiddenSize, l.HiddenSize); dbo := zeroMatrix(l.HiddenSize, 1)
-	dWhy := zeroMatrix(l.OutputSize, l.HiddenSize); dby := zeroMatrix(l.OutputSize, 1)
+	dWf := zeroMatrix(l.HiddenSize, l.InputSize)
+	dUf := zeroMatrix(l.HiddenSize, l.HiddenSize)
+	dbf := zeroMatrix(l.HiddenSize, 1)
+	dWi := zeroMatrix(l.HiddenSize, l.InputSize)
+	dUi := zeroMatrix(l.HiddenSize, l.HiddenSize)
+	dbi := zeroMatrix(l.HiddenSize, 1)
+	dWc := zeroMatrix(l.HiddenSize, l.InputSize)
+	dUc := zeroMatrix(l.HiddenSize, l.HiddenSize)
+	dbc := zeroMatrix(l.HiddenSize, 1)
+	dWo := zeroMatrix(l.HiddenSize, l.InputSize)
+	dUo := zeroMatrix(l.HiddenSize, l.HiddenSize)
+	dbo := zeroMatrix(l.HiddenSize, 1)
+	dWhy := zeroMatrix(l.OutputSize, l.HiddenSize)
+	dby := zeroMatrix(l.OutputSize, 1)
 
 	dhNext := make([]float64, l.HiddenSize)
 	dcNext := make([]float64, l.HiddenSize)
@@ -110,7 +130,7 @@ func (l *LSTM) Train(inputs [][]float64, targets [][]float64) float64 {
 	for t := T - 1; t >= 0; t-- {
 		y := outputs[t]
 		target := targets[t]
-		
+
 		dy := make([]float64, l.OutputSize)
 		for k := 0; k < l.OutputSize; k++ {
 			err := y[k] - target[k]
@@ -135,17 +155,17 @@ func (l *LSTM) Train(inputs [][]float64, targets [][]float64) float64 {
 			}
 			dh[j] = sumWhy + dhNext[j]
 		}
-		
+
 		f, i, cBar, o := cache[t][0], cache[t][1], cache[t][2], cache[t][3]
 		cPrev := c[t]
 		cCurr := c[t+1]
 		tanhC := tanhVec(cCurr)
-		
+
 		do := make([]float64, l.HiddenSize)
 		dc := make([]float64, l.HiddenSize)
 		for j := 0; j < l.HiddenSize; j++ {
 			do[j] = dh[j] * tanhC[j] * o[j] * (1 - o[j])
-			dc[j] = dh[j] * o[j] * (1 - tanhC[j]*tanhC[j]) + dcNext[j]
+			dc[j] = dh[j]*o[j]*(1-tanhC[j]*tanhC[j]) + dcNext[j]
 		}
 
 		dcBar := make([]float64, l.HiddenSize)
@@ -179,12 +199,21 @@ func (l *LSTM) Train(inputs [][]float64, targets [][]float64) float64 {
 
 	lr := l.LearningRate
 	clip := 1.0 // Gradient clipping
-	
-	applyGrads(l.Wf, dWf, lr, clip); applyGrads(l.Uf, dUf, lr, clip); applyGrads(l.bf, dbf, lr, clip)
-	applyGrads(l.Wi, dWi, lr, clip); applyGrads(l.Ui, dUi, lr, clip); applyGrads(l.bi, dbi, lr, clip)
-	applyGrads(l.Wc, dWc, lr, clip); applyGrads(l.Uc, dUc, lr, clip); applyGrads(l.bc, dbc, lr, clip)
-	applyGrads(l.Wo, dWo, lr, clip); applyGrads(l.Uo, dUo, lr, clip); applyGrads(l.bo, dbo, lr, clip)
-	applyGrads(l.Why, dWhy, lr, clip); applyGrads(l.by, dby, lr, clip)
+
+	applyGrads(l.Wf, dWf, lr, clip)
+	applyGrads(l.Uf, dUf, lr, clip)
+	applyGrads(l.bf, dbf, lr, clip)
+	applyGrads(l.Wi, dWi, lr, clip)
+	applyGrads(l.Ui, dUi, lr, clip)
+	applyGrads(l.bi, dbi, lr, clip)
+	applyGrads(l.Wc, dWc, lr, clip)
+	applyGrads(l.Uc, dUc, lr, clip)
+	applyGrads(l.bc, dbc, lr, clip)
+	applyGrads(l.Wo, dWo, lr, clip)
+	applyGrads(l.Uo, dUo, lr, clip)
+	applyGrads(l.bo, dbo, lr, clip)
+	applyGrads(l.Why, dWhy, lr, clip)
+	applyGrads(l.by, dby, lr, clip)
 
 	return loss / float64(T)
 }
@@ -193,7 +222,7 @@ func accumulateGrads(dW, dU, db [][]float64, dGate, x, hPrev []float64) {
 	rows := len(dW)
 	cols := len(dW[0])
 	hSize := len(dU[0])
-	
+
 	for i := 0; i < rows; i++ {
 		db[i][0] += dGate[i]
 		for j := 0; j < cols; j++ {
@@ -209,8 +238,12 @@ func applyGrads(W, dW [][]float64, lr, clip float64) {
 	for i := range W {
 		for j := range W[i] {
 			grad := dW[i][j]
-			if grad > clip { grad = clip }
-			if grad < -clip { grad = -clip }
+			if grad > clip {
+				grad = clip
+			}
+			if grad < -clip {
+				grad = -clip
+			}
 			W[i][j] -= lr * grad
 		}
 	}
