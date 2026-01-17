@@ -9,7 +9,9 @@
       "Bash(go doc:*)",
       "Bash(npm run check:*)",
       "Bash(npm ls:*)",
-      "Bash(git rebase:*)"
+      "Bash(git rebase:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go build:*)"
     ]
   }
 }
