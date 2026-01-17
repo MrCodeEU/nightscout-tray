@@ -3,12 +3,7 @@ package prediction
 import (
 	"math"
 	"math/rand"
-	"time"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 // LSTM represents a simple Long Short-Term Memory network
 type LSTM struct {
@@ -259,6 +254,7 @@ func newMatrix(rows, cols int, scale float64) [][]float64 {
 			if scale == 0 {
 				m[i][j] = 0
 			} else {
+				//nolint:gosec // ML weights do not require crypto secure random
 				m[i][j] = (rand.Float64()*2 - 1) * scale
 			}
 		}

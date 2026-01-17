@@ -710,6 +710,7 @@ func (m *MLPredictor) linearExtrapolate(inputSeq [6]float64) [12]float64 {
 	trend := inputSeq[5] - inputSeq[4]
 
 	for i := 0; i < 12; i++ {
+		//nolint:gosec // false positive, bounds are checked
 		predictions[i] = inputSeq[5] + trend*float64(i+1)*0.5 // Damped trend
 		if predictions[i] < -1 {
 			predictions[i] = -1
